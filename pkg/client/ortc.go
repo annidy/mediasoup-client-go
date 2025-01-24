@@ -299,3 +299,16 @@ func (o Ortc) validateSctpStreamParameters(params *mediasoup.SctpStreamParameter
 
 	return
 }
+
+func (o Ortc) addNackSupportForOpus(caps *RtpCapabilities) {
+	for _, codec := range caps.Codecs {
+		if strings.ToLower(codec.MimeType) == "audio/opus" {
+			for _, fb := range codec.RtcpFeedback {
+				if fb.Type == "nack" {
+					return
+				}
+			}
+			codec.RtcpFeedback = append(codec.RtcpFeedback, mediasoup.RtcpFeedback{Type: "nack"})
+		}
+	}
+}

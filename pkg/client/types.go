@@ -12,6 +12,7 @@ type SctpCapabilities = mediasoup.SctpCapabilities
 type SctpStreamParameters = mediasoup.SctpStreamParameters
 type RtpCodecSpecificParameters = mediasoup.RtpCodecSpecificParameters
 type RtcpFeedback = mediasoup.RtcpFeedback
+type RtpHeaderExtension = mediasoup.RtpHeaderExtension
 
 type WebrtcTransportInfo struct {
 	Id             string                    `json:"id,omitempty"`

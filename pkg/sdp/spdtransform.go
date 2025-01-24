@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-func Write(spdObject Spd) (spdStr string) {
+func Write(spdObject Sdp) (spdStr string) {
 	jsonStr, _ := json.Marshal(spdObject)
 	cJson := C.CString(string(jsonStr))
 	defer C.free(unsafe.Pointer(cJson))
@@ -21,9 +21,7 @@ func Write(spdObject Spd) (spdStr string) {
 	return
 }
 
-// SDPToJSON converts an SDP string to a JSON string.
-// The caller is responsible for freeing the returned string.
-func Parse(sdpStr string) (spdObject Spd) {
+func Parse(sdpStr string) (spdObject Sdp) {
 	cSdp := C.CString(sdpStr)
 	defer C.free(unsafe.Pointer(cSdp))
 	cResult := C.sdptransform_parse(cSdp)
@@ -33,7 +31,17 @@ func Parse(sdpStr string) (spdObject Spd) {
 	return
 }
 
-type Spd struct {
+func ParseParams(params string) (spdParamsObject SpdParams) {
+	cStr := C.CString(params)
+	defer C.free(unsafe.Pointer(cStr))
+	cResult := C.sdptransform_parse_params(cStr)
+	jsonStr := C.GoString(cResult)
+	C.free(unsafe.Pointer(cResult))
+	json.Unmarshal([]byte(jsonStr), &spdParamsObject)
+	return
+}
+
+type Sdp struct {
 	Connection struct {
 		IP      string `json:"ip,omitempty"`
 		Version int    `json:"version,omitempty"`
@@ -55,12 +63,15 @@ type Spd struct {
 			Type       string `json:"type,omitempty"`
 		} `json:"candidates,omitempty"`
 		Direction string `json:"direction,omitempty"`
-		Fmtp      []any  `json:"fmtp,omitempty"`
-		Payloads  string `json:"payloads,omitempty"`
-		Port      int    `json:"port,omitempty"`
-		Protocol  string `json:"protocol,omitempty"`
-		Ptime     int    `json:"ptime,omitempty"`
-		Rtp       []struct {
+		Fmtp      []struct {
+			Config  string `json:"config,omitempty"`
+			Payload int    `json:"payload,omitempty"`
+		} `json:"fmtp,omitempty"`
+		Payloads string `json:"payloads,omitempty"`
+		Port     int    `json:"port,omitempty"`
+		Protocol string `json:"protocol,omitempty"`
+		Ptime    int    `json:"ptime,omitempty"`
+		Rtp      []struct {
 			Codec   string `json:"codec,omitempty"`
 			Payload int    `json:"payload,omitempty"`
 			Rate    int    `json:"rate,omitempty"`
@@ -80,6 +91,11 @@ type Spd struct {
 			ID        int    `json:"id,omitempty"`
 			Value     string `json:"value,omitempty"`
 		} `json:"ssrcs,omitempty"`
+		Ext []struct {
+			EncryptUri string `json:"encrypt-uri,omitempty"`
+			Uri        string `json:"uri,omitempty"`
+			Value      int    `json:"value,omitempty"`
+		} `json:"ext,omitempty"`
 	} `json:"media,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Origin struct {
@@ -95,4 +111,10 @@ type Spd struct {
 		Stop  int `json:"stop,omitempty"`
 	} `json:"timing,omitempty"`
 	Version int `json:"version,omitempty"`
+}
+
+type SpdParams struct {
+	ProfileLevelId        string `json:"profile-level-id,omitempty"`
+	PacketizationMode     int    `json:"packetization-mode,omitempty"`
+	LevelAsymmetryAllowed int    `json:"level-asymmetry-allowed,omitempty"`
 }

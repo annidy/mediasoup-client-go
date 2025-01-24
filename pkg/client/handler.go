@@ -59,8 +59,12 @@ func (h *PionHandler) getNativeRouterRtpCapabilities() RtpCapabilities {
 	fmt.Println(offer.SDP)
 
 	sdpObject := sdp.Parse(offer.SDP)
+	nativeRtpCapabilities := extractRtpCapabilities(sdpObject)
 
-	return mediasoup.RtpCapabilities{}
+	// libwebrtc supports NACK for OPUS but doesn't announce it.
+	ortc.addNackSupportForOpus(&nativeRtpCapabilities)
+
+	return nativeRtpCapabilities
 }
 
 func (h *PionHandler) getNativeSctpCapabilities() mediasoup.SctpCapabilities {

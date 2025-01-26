@@ -83,7 +83,8 @@ func (o Ortc) validateRtpCodecCapability(code *mediasoup.RtpCodecCapability) (er
 		return mediasoup.NewTypeError("missing codec.clockRate")
 	}
 
-	if code.Channels == 0 {
+	// channels is optional. If unset, set it to 1 (just if audio).
+	if code.Kind == mediasoup.MediaKind_Audio && code.Channels == 0 {
 		code.Channels = 1
 	}
 
@@ -105,12 +106,21 @@ func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps RtpCapabilities) 
 		HeaderExtensions: make([]*RtpHeaderExtensionEx, 0),
 	}
 	// Match media codecs and keep the order preferred by remoteCaps.
+	usedMap := make(map[*mediasoup.RtpCodecCapability]bool)
 	for _, remoteCodec := range remoteCaps.Codecs {
 		if isRtxCodec(*remoteCodec) {
 			continue
 		}
 		li := slices.IndexFunc(localCaps.Codecs, func(localCodec *mediasoup.RtpCodecCapability) bool {
-			return matchCodec(*localCodec, *remoteCodec, false, false)
+			if matchCodec(*localCodec, *remoteCodec, false, false) {
+				// 剔除重复的codec
+				if _, ok := usedMap[localCodec]; ok {
+					return false
+				}
+				usedMap[localCodec] = true
+				return true
+			}
+			return false
 		})
 		if li < 0 {
 			continue
@@ -167,6 +177,13 @@ func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps RtpCapabilities) 
 			RecvId:  remoteExt.PreferredId,
 			Encrypt: localCaps.HeaderExtensions[li].PreferredEncrypt,
 		}
+		// sendonly/recvonly 反向
+		if extendedExt.Direction == mediasoup.Direction_Sendonly {
+			extendedExt.Direction = mediasoup.Direction_Recvonly
+		} else if extendedExt.Direction == mediasoup.Direction_Recvonly {
+			extendedExt.Direction = mediasoup.Direction_Sendonly
+		}
+
 		extendedRtpCapabilities.HeaderExtensions = append(extendedRtpCapabilities.HeaderExtensions, extendedExt)
 	}
 
@@ -189,7 +206,7 @@ func (o Ortc) getRecvRtpCapabilities(extendedRtpCapabilities RtpCapabilitiesEx) 
 			RtcpFeedback:         extendedCodec.RtcpFeedback,
 		}
 		rtpCapabilities.Codecs = append(rtpCapabilities.Codecs, &codec)
-		if extendedCodec.LocalRtxPayloadType > 0 {
+		if extendedCodec.RemoteRtxPayloadType > 0 {
 			rtpCapabilities.Codecs = append(rtpCapabilities.Codecs, &RtpCodecCapability{
 				MimeType:             fmt.Sprintf("%s/rtx", extendedCodec.Kind),
 				Kind:                 extendedCodec.Kind,
@@ -288,7 +305,8 @@ func (o Ortc) validateRtpCodecParameters(code *mediasoup.RtpCodecParameters) (er
 		return mediasoup.NewTypeError("missing remoteCodec.clockRate")
 	}
 
-	if code.Channels == 0 {
+	// channels is optional. If unset, set it to 1 (just if audio).
+	if strings.HasPrefix(mimeType, "audio/") && code.Channels == 0 {
 		code.Channels = 1
 	}
 

@@ -26,10 +26,10 @@ type WebrtcTransportProducerDataRequest struct {
 }
 
 type CreateWebrtcTransportRequest struct {
-	ForceTcp         bool                        `json:"forceTcp,omitempty"`
-	Producing        bool                        `json:"producing,omitempty"`
-	Consuming        bool                        `json:"consuming,omitempty"`
-	SctpCapabilities *mediasoup.SctpCapabilities `json:"sctpCapabilities,omitempty"`
+	ForceTcp         bool                        `json:"forceTcp"`
+	Producing        bool                        `json:"producing"`
+	Consuming        bool                        `json:"consuming"`
+	SctpCapabilities *mediasoup.SctpCapabilities `json:"sctpCapabilities"`
 }
 
 type ConnectWebRtcTransportRequest struct {

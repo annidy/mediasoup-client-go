@@ -10,13 +10,13 @@ import (
 
 type Device struct {
 	mediasoup.IEventEmitter
-	Name                  string
-	recvRtpCapabilities   mediasoup.RtpCapabilities
-	sctpCapabilities      mediasoup.SctpCapabilities
-	extendRtpCapabilities RtpCapabilitiesEx
-	loaded                atomic.Bool
-	handler               *PionHandler
-	canProduceByKind      map[mediasoup.MediaKind]bool
+	Name                    string
+	recvRtpCapabilities     mediasoup.RtpCapabilities
+	sctpCapabilities        mediasoup.SctpCapabilities
+	extendedRtpCapabilities RtpCapabilitiesEx
+	loaded                  atomic.Bool
+	handler                 *PionHandler
+	canProduceByKind        map[mediasoup.MediaKind]bool
 }
 
 func NewDevice() *Device {
@@ -50,27 +50,34 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 		panic(err)
 	}
 
-	d.extendRtpCapabilities = ortc.getExtendedRtpCapabilities(clonedNativeRtpCapabilities, clonedRouterRtpCapabilities)
+	d.extendedRtpCapabilities = ortc.getExtendedRtpCapabilities(clonedNativeRtpCapabilities, clonedRouterRtpCapabilities)
 
 	// TODO: check whether we can produce audio/video
 
-	d.recvRtpCapabilities = ortc.getRecvRtpCapabilities(d.extendRtpCapabilities)
+	d.recvRtpCapabilities = ortc.getRecvRtpCapabilities(d.extendedRtpCapabilities)
 	if err := ortc.validateRtpCapabilities(&d.recvRtpCapabilities); err != nil {
 		panic(err)
 	}
 	d.sctpCapabilities = d.handler.getNativeSctpCapabilities()
 }
 
-func (d *Device) CreateSendTransport(transportInfo WebrtcTransportInfo) *Transport {
-	return nil
+func (d *Device) CreateSendTransport(options TransportOptions) *Transport {
+	options.direction = "send"
+	return d.createTransport(options)
 }
 
-func (d *Device) CreateRecvTransport(transportInfo WebrtcTransportInfo) *Transport {
-	return nil
+func (d *Device) CreateRecvTransport(options TransportOptions) *Transport {
+	options.direction = "recv"
+	return d.createTransport(options)
 }
 
-func (d *Device) createTransport() {
+func (d *Device) createTransport(options TransportOptions) *Transport {
+	options.extendedRtpCapabilities = d.extendedRtpCapabilities
+	transport := NewTransport(options)
 
+	transport.SafeEmit("newtransport", transport)
+
+	return transport
 }
 
 func (d *Device) RtpCapabilities() *RtpCapabilities {

@@ -8,6 +8,12 @@ import (
 )
 
 type HandlerRunOptions struct {
+	direction              string
+	iceParameters          *IceParameters
+	iceCandidates          []*IceCandidate
+	dtlsParameters         *DtlsParameters
+	sctpParameters         *SctpParameters
+	extenedRtpCapabilities RtpCapabilitiesEx
 }
 
 type Handler interface {
@@ -19,6 +25,10 @@ type Handler interface {
 }
 
 type PionHandler struct {
+	mediasoup.IEventEmitter
+	direction string
+	remoteSdp *RemoteSdp
+	pc        *webrtc.PeerConnection
 }
 
 func NewPionHandler() *PionHandler {
@@ -72,4 +82,28 @@ func (h *PionHandler) getNativeSctpCapabilities() mediasoup.SctpCapabilities {
 			MIS: 1024,
 		},
 	}
+}
+
+func (h *PionHandler) run(options HandlerRunOptions) {
+	h.direction = options.direction
+
+	h.remoteSdp = NewRemoteSdp(options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters)
+
+	config := webrtc.Configuration{
+		// TODO: iceServers
+	}
+
+	pc, err := webrtc.NewPeerConnection(config)
+	if err != nil {
+		panic(err)
+	}
+	pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
+		log.Info().Str("state", state.String()).Msg("ICEGatheringStateChange")
+		h.Emit("@icegatheringstatechange", state)
+	})
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Info().Str("state", state.String()).Msg("ConnectionStateChange")
+		h.Emit("@connectionstatechange", state)
+	})
+	h.pc = pc
 }

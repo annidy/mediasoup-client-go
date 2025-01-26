@@ -27,14 +27,22 @@ type RoomClient struct {
 	produce          bool // 是否推流
 	consume          bool // 是否拉流
 	peer             *Protoo
-	peers            map[string]*protoo.Peer // 房间中的其它人
-	device           *client.Device          // 包装设备
+	peers            map[string]*proto.PeerData // 房间中的其它人
+	device           *client.Device             // 包装设备
 	sendTransport    *client.Transport
 	recvTransport    *client.Transport
 	closed           uint32
 	micProducer      *client.Producer
 	webcamProducer   *client.Producer
 	chatDataProducer *client.DataProducer
+}
+
+func NewRoomClient() *RoomClient {
+	return &RoomClient{
+		produce: true,
+		consume: true,
+		peers:   make(map[string]*proto.PeerData),
+	}
 }
 
 // 加入房间
@@ -71,7 +79,7 @@ func (r *RoomClient) Join(wss string) {
 	})
 
 	peer.On("notification", func(notification protoo.Message) {
-		log.Info().Msgf("notification %v", notification)
+		log.Info().Interface("notification", notification).Msgf("notification")
 	})
 
 	go func() {
@@ -223,29 +231,29 @@ func (r *RoomClient) joinRoom() {
 	r.device.Load(rtpCapabilities)
 
 	if r.produce {
-		var transportInfo client.WebrtcTransportInfo
+		var transportOptions client.TransportOptions
 
 		if err := r.peer.RequestData("createWebRtcTransport", proto.CreateWebrtcTransportRequest{
 			ForceTcp:         false,
 			Producing:        true,
 			Consuming:        false,
 			SctpCapabilities: r.device.SctpCapabilities(),
-		}, &transportInfo); err != nil {
+		}, &transportOptions); err != nil {
 			log.Err(err).Msg("createWebRtcTransport")
 			return
 		}
 
-		r.sendTransport = r.device.CreateSendTransport(transportInfo)
+		r.sendTransport = r.device.CreateSendTransport(transportOptions)
 
 		r.sendTransport.On("connect", func(dtlsParameters *client.DtlsParameters) {
 			r.peer.Request("connectWebRtcTransport", proto.ConnectWebRtcTransportRequest{
-				TransportId:    transportInfo.Id,
+				TransportId:    transportOptions.Id,
 				DtlsParameters: dtlsParameters,
 			})
 		})
 		r.sendTransport.On("produce", func(kind client.MediaKind, rtpParameters *client.RtpParameters, appData any) {
 			r.peer.Request("produce", proto.WebrtcTransportProducerRequest{
-				TransportId:   transportInfo.Id,
+				TransportId:   transportOptions.Id,
 				Kind:          kind,
 				RtpParameters: rtpParameters,
 				AppData:       appData,
@@ -253,7 +261,7 @@ func (r *RoomClient) joinRoom() {
 		})
 		r.sendTransport.On("producedata", func(sctpStreamParameters *client.SctpStreamParameters, label string, protocol string, appData any) {
 			r.peer.Request("produceData", proto.WebrtcTransportProducerDataRequest{
-				TransportId:          transportInfo.Id,
+				TransportId:          transportOptions.Id,
 				SctpStreamParameters: sctpStreamParameters,
 				Label:                label,
 				Protocol:             protocol,
@@ -264,22 +272,22 @@ func (r *RoomClient) joinRoom() {
 
 	if r.consume {
 
-		var transportInfo client.WebrtcTransportInfo
+		var transportOptions client.TransportOptions
 
 		if err := r.peer.RequestData("createWebRtcTransport", proto.CreateWebrtcTransportRequest{
 			ForceTcp:         false,
 			Producing:        false,
 			Consuming:        true,
 			SctpCapabilities: r.device.SctpCapabilities(),
-		}, &transportInfo); err != nil {
+		}, &transportOptions); err != nil {
 			log.Err(err).Msg("createWebRtcTransport")
 			return
 		}
 
-		r.recvTransport = r.device.CreateRecvTransport(transportInfo)
+		r.recvTransport = r.device.CreateRecvTransport(transportOptions)
 		r.recvTransport.On("connect", func(dtlsParameters *client.DtlsParameters) {
 			r.peer.Request("connectWebRtcTransport", proto.ConnectWebRtcTransportRequest{
-				TransportId:    transportInfo.Id,
+				TransportId:    transportOptions.Id,
 				DtlsParameters: dtlsParameters,
 			})
 		})
@@ -300,7 +308,7 @@ func (r *RoomClient) joinRoom() {
 		return
 	}
 	for _, peer := range peers.Peers {
-		r.peers[peer.Id] = protoo.NewPeer(peer.Id, peer, nil)
+		r.peers[peer.Id] = peer
 	}
 
 	// Enable mic/webcam.

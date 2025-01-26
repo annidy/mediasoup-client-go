@@ -28,6 +28,7 @@ func Parse(sdpStr string) (spdObject Sdp) {
 	jsonStr := C.GoString(cResult)
 	C.free(unsafe.Pointer(cResult))
 	json.Unmarshal([]byte(jsonStr), &spdObject)
+	checkMissingKeys[Sdp](jsonStr)
 	return
 }
 
@@ -38,10 +39,15 @@ func ParseParams(params string) (spdParamsObject SpdParams) {
 	jsonStr := C.GoString(cResult)
 	C.free(unsafe.Pointer(cResult))
 	json.Unmarshal([]byte(jsonStr), &spdParamsObject)
+	checkMissingKeys[SpdParams](jsonStr)
 	return
 }
 
 type Sdp struct {
+	Groups []struct {
+		Mids string `json:"mids"`
+		Type string `json:"type"`
+	} `json:"groups"`
 	Connection struct {
 		IP      string `json:"ip,omitempty"`
 		Version int    `json:"version,omitempty"`
@@ -54,24 +60,49 @@ type Sdp struct {
 	IceUfrag string `json:"iceUfrag,omitempty"`
 	Media    []struct {
 		Candidates []struct {
-			Component  int    `json:"component,omitempty"`
-			Foundation string `json:"foundation,omitempty"`
-			IP         string `json:"ip,omitempty"`
-			Port       int    `json:"port,omitempty"`
-			Priority   int    `json:"priority,omitempty"`
-			Transport  string `json:"transport,omitempty"`
-			Type       string `json:"type,omitempty"`
+			Component  int    `json:"component"`
+			Foundation string `json:"foundation"`
+			Generation int    `json:"generation,omitempty"`
+			IP         string `json:"ip"`
+			Port       int    `json:"port"`
+			Priority   int    `json:"priority"`
+			Transport  string `json:"transport"`
+			Type       string `json:"type"`
+			Tcptype    string `json:"tcptype,omitempty"`
+			Raddr      string `json:"raddr,omitempty"`
+			Rport      int    `json:"rport,omitempty"`
 		} `json:"candidates,omitempty"`
+		Connection struct {
+			IP      string `json:"ip"`
+			Version int    `json:"version"`
+		} `json:"connection"`
+		Crypto []struct {
+			Config string `json:"config"`
+			ID     int    `json:"id"`
+			Suite  string `json:"suite"`
+		} `json:"crypto,omitempty"`
 		Direction string `json:"direction,omitempty"`
 		Fmtp      []struct {
 			Config  string `json:"config,omitempty"`
 			Payload int    `json:"payload,omitempty"`
 		} `json:"fmtp,omitempty"`
-		Payloads string `json:"payloads,omitempty"`
-		Port     int    `json:"port,omitempty"`
-		Protocol string `json:"protocol,omitempty"`
-		Ptime    int    `json:"ptime,omitempty"`
-		Rtp      []struct {
+		IceOptions string `json:"iceOptions,omitempty"`
+		IcePwd     string `json:"icePwd,omitempty"`
+		IceUfrag   string `json:"iceUfrag,omitempty"`
+		Maxptime   int    `json:"maxptime,omitempty"`
+		Mid        string `json:"mid,omitempty"`
+		Payloads   string `json:"payloads,omitempty"`
+		Port       int    `json:"port,omitempty"`
+		Protocol   string `json:"protocol,omitempty"`
+		Ptime      int    `json:"ptime,omitempty"`
+		Rtcp       struct {
+			Address string `json:"address,omitempty"`
+			IPVer   int    `json:"ipVer,omitempty"`
+			NetType string `json:"netType,omitempty"`
+			Port    int    `json:"port,omitempty"`
+		} `json:"rtcp,omitempty"`
+		RtcpMux string `json:"rtcpMux,omitempty"`
+		Rtp     []struct {
 			Codec    string `json:"codec,omitempty"`
 			Payload  int    `json:"payload,omitempty"`
 			Rate     int    `json:"rate,omitempty"`
@@ -92,12 +123,31 @@ type Sdp struct {
 			ID        int    `json:"id,omitempty"`
 			Value     string `json:"value,omitempty"`
 		} `json:"ssrcs,omitempty"`
-		Ext []struct {
+		Framerate float64 `json:"framerate,omitempty"`
+		Ext       []struct {
 			EncryptUri string `json:"encrypt-uri,omitempty"`
 			Uri        string `json:"uri,omitempty"`
 			Value      int    `json:"value,omitempty"`
 		} `json:"ext,omitempty"`
+		Bandwidth []struct {
+			Limit int    `json:"limit,omitempty"`
+			Type  string `json:"type,omitempty"`
+		} `json:"bandwidth,omitempty"`
+		Fingerprint struct {
+			Hash string `json:"hash,omitempty"`
+			Type string `json:"type,omitempty"`
+		} `json:"fingerprint,omitempty"`
+		Sctpmap struct {
+			App            string `json:"app,omitempty"`
+			MaxMessageSize int    `json:"maxMessageSize,omitempty"`
+			SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
+		} `json:"sctpmap,omitempty"`
+		Setup string `json:"setup,omitempty"`
 	} `json:"media,omitempty"`
+	MsidSemantic struct {
+		Semantics string `json:"semantics,omitempty"`
+		Token     string `json:"token,omitempty"`
+	} `json:"msidSemantic,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Origin struct {
 		Address        string `json:"address,omitempty"`
@@ -111,10 +161,20 @@ type Sdp struct {
 		Start int `json:"start,omitempty"`
 		Stop  int `json:"stop,omitempty"`
 	} `json:"timing,omitempty"`
-	Version int `json:"version,omitempty"`
+	IceLite string `json:"iceLite,omitempty"`
+	Version int    `json:"version,omitempty"`
+	// 暂时不知道有什么用
+	ExtmapAllowMixed string `json:"extmapAllowMixed,omitempty"`
+	Invalid          []struct {
+		Value string `json:"value,omitempty"`
+	} `json:"invalid,omitempty"`
 }
 
 type SpdParams struct {
+	Apt                   int    `json:"apt,omitempty"`
+	Minptime              int    `json:"minptime,omitempty"`
+	Useinbandfec          int    `json:"useinbandfec,omitempty"`
+	ProfileId             int    `json:"profile-id,omitempty"`
 	ProfileLevelId        string `json:"profile-level-id,omitempty"`
 	PacketizationMode     int    `json:"packetization-mode,omitempty"`
 	LevelAsymmetryAllowed int    `json:"level-asymmetry-allowed,omitempty"`

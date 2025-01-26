@@ -40,7 +40,7 @@ func main() {
 	q.Set("peerId", util.RandomAlpha(6))
 	u.RawQuery = q.Encode()
 
-	roomClient := &room.RoomClient{}
+	roomClient := room.NewRoomClient()
 
 	roomClient.Join(u.String())
 

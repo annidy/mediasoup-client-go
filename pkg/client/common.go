@@ -31,10 +31,7 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 			continue
 		}
 		for _, rtp := range media.Rtp {
-			channels, err := strconv.ParseInt(rtp.Encoding, 10, 64)
-			if err != nil {
-				channels = 1
-			}
+			channels, _ := strconv.ParseInt(rtp.Encoding, 10, 64)
 			codec := &RtpCodecCapability{
 				Kind:                 mediasoup.MediaKind(media.Type),
 				MimeType:             fmt.Sprintf("%s/%s", media.Type, rtp.Codec),
@@ -45,11 +42,24 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 			}
 			codecsMap[codec.PreferredPayloadType] = codec
 		}
-		// get profile-level-id
+		// get codec parameters
 		for _, fmtp := range media.Fmtp {
 			parameters := sdp.ParseParams(fmtp.Config)
 			if codec, ok := codecsMap[byte(fmtp.Payload)]; ok {
 				codec.Parameters.ProfileLevelId = parameters.ProfileLevelId
+				if parameters.PacketizationMode > 0 {
+					var PacketizationMode uint8 = uint8(parameters.PacketizationMode)
+					codec.Parameters.PacketizationMode = &PacketizationMode
+				}
+				codec.Parameters.LevelAsymmetryAllowed = uint8(parameters.LevelAsymmetryAllowed)
+				codec.Parameters.Apt = byte(parameters.Apt)
+				codec.Parameters.Minptime = uint8(parameters.Minptime)
+				codec.Parameters.Useinbandfec = uint8(parameters.Useinbandfec)
+				if parameters.ProfileId > 0 {
+					var ProfileId uint8 = uint8(parameters.ProfileId)
+					codec.Parameters.ProfileId = &ProfileId
+				}
+				// TODO: 拷贝其他属性
 			}
 		}
 		// get rtcp feedback
@@ -99,11 +109,13 @@ func matchCodec(aCodec, bCodec RtpCodecCapability, strict, modify bool) bool {
 	if aMinType != bMinType {
 		return false
 	}
-	if aCodec.ClockRate != bCodec.ClockRate {
-		return false
-	}
-	if aCodec.Channels != bCodec.Channels {
-		return false
+	if aCodec.Kind == mediasoup.MediaKind_Audio {
+		if aCodec.ClockRate != bCodec.ClockRate {
+			return false
+		}
+		if aCodec.Channels != bCodec.Channels {
+			return false
+		}
 	}
 	switch aMinType {
 	case "video/h264":

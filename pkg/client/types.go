@@ -3,12 +3,14 @@ package client
 import "github.com/jiyeyuran/mediasoup-go"
 
 type IceParameters = mediasoup.IceParameters
+type IceCandidate = mediasoup.IceCandidate
 type DtlsParameters = mediasoup.DtlsParameters
 type RtpCapabilities = mediasoup.RtpCapabilities
 type RtpCodecCapability = mediasoup.RtpCodecCapability
 type MediaKind = mediasoup.MediaKind
 type RtpParameters = mediasoup.RtpParameters
 type SctpCapabilities = mediasoup.SctpCapabilities
+type SctpParameters = mediasoup.SctpParameters
 type SctpStreamParameters = mediasoup.SctpStreamParameters
 type RtpCodecSpecificParameters = mediasoup.RtpCodecSpecificParameters
 type RtcpFeedback = mediasoup.RtcpFeedback
@@ -36,10 +38,9 @@ type RtpHeaderExtensionEx struct {
 }
 
 type WebrtcTransportInfo struct {
-	Id             string                    `json:"id,omitempty"`
-	DtlsParameters *mediasoup.DtlsParameters `json:"dtlsParameters,omitempty"`
-	IceCandidates  *mediasoup.IceCandidate   `json:"port,omitempty"`
-	SctpParameters *mediasoup.SctpParameters `json:"rtcpPort,omitempty"`
+	Id               string                      `json:"id,omitempty"`
+	DtlsParameters   *mediasoup.DtlsParameters   `json:"dtlsParameters,omitempty"`
+	SctpCapabilities *mediasoup.SctpCapabilities `json:"sctpCapabilities,omitempty"`
 }
 
 type DataProducerOptions struct {

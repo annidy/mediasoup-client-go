@@ -14,6 +14,27 @@ type RtpCodecSpecificParameters = mediasoup.RtpCodecSpecificParameters
 type RtcpFeedback = mediasoup.RtcpFeedback
 type RtpHeaderExtension = mediasoup.RtpHeaderExtension
 
+type RtpCapabilitiesEx struct {
+	Codecs           []*RtpCodecCapabilityEx `json:"codecs,omitempty"`
+	HeaderExtensions []*RtpHeaderExtensionEx `json:"headerExtensions,omitempty"`
+}
+type RtpCodecCapabilityEx struct {
+	RtpCodecCapability
+	LocalPayloadType     byte
+	LocalRtxPayloadType  byte
+	LocalParameters      RtpCodecSpecificParameters
+	RemotePayloadType    byte
+	RemoteRtxPayloadType byte
+	RemoteParameters     RtpCodecSpecificParameters
+}
+
+type RtpHeaderExtensionEx struct {
+	RtpHeaderExtension
+	SendId  int
+	RecvId  int
+	Encrypt bool
+}
+
 type WebrtcTransportInfo struct {
 	Id             string                    `json:"id,omitempty"`
 	DtlsParameters *mediasoup.DtlsParameters `json:"dtlsParameters,omitempty"`

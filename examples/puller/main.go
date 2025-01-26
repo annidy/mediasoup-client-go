@@ -14,6 +14,9 @@ type Config struct {
 		Host   string
 		Path   string
 	}
+	Room struct {
+		RoomId string
+	}
 }
 
 func main() {
@@ -33,7 +36,7 @@ func main() {
 
 	u := url.URL{Scheme: config.Server.Scheme, Host: config.Server.Host, Path: config.Server.Path}
 	q := u.Query()
-	q.Set("roomId", "888389527")
+	q.Set("roomId", config.Room.RoomId)
 	q.Set("peerId", util.RandomAlpha(6))
 	u.RawQuery = q.Encode()
 

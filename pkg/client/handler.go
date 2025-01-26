@@ -1,8 +1,6 @@
 package client
 
 import (
-	"fmt"
-
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/pion/webrtc/v4"
@@ -56,7 +54,7 @@ func (h *PionHandler) getNativeRouterRtpCapabilities() RtpCapabilities {
 	}
 	pc.Close()
 
-	fmt.Println(offer.SDP)
+	// log.Info().Str("SDP", offer.SDP).Msg("CreateOffer")
 
 	sdpObject := sdp.Parse(offer.SDP)
 	nativeRtpCapabilities := extractRtpCapabilities(sdpObject)

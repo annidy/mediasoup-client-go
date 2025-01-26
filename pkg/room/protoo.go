@@ -16,7 +16,7 @@ func (p *Protoo) RequestData(method string, data interface{}, resp interface{}) 
 		err = rsp.Err()
 		return
 	}
-	log.Info().Str("method", method).Interface("data", rsp.Data()).Msg("response")
 	err = json.Unmarshal(rsp.Data(), resp)
+	log.Info().Str("method", method).Interface("data", resp).Msg("response")
 	return
 }

@@ -1,10 +1,11 @@
 package client
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
-	"github.com/annidy/mediasoup-client/internal/util"
 	"github.com/jiyeyuran/mediasoup-go"
 )
 
@@ -82,8 +83,7 @@ func (o Ortc) validateRtpCodecCapability(code *mediasoup.RtpCodecCapability) (er
 		return mediasoup.NewTypeError("missing codec.clockRate")
 	}
 
-	// channels is optional. If unset, set it to 1 (just if audio).
-	if code.Kind == mediasoup.MediaKind_Audio && code.Channels == 0 {
+	if code.Channels == 0 {
 		code.Channels = 1
 	}
 
@@ -99,18 +99,124 @@ func (o Ortc) validateRtpCodecCapability(code *mediasoup.RtpCodecCapability) (er
 /**
  * Generate extended RTP capabilities for sending and receiving.
  */
-func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps mediasoup.RtpCapabilities) mediasoup.RtpCapabilities {
-	var extendedRtpCapabilities mediasoup.RtpCapabilities
+func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps RtpCapabilities) RtpCapabilitiesEx {
+	extendedRtpCapabilities := RtpCapabilitiesEx{
+		Codecs:           make([]*RtpCodecCapabilityEx, 0),
+		HeaderExtensions: make([]*RtpHeaderExtensionEx, 0),
+	}
+	// Match media codecs and keep the order preferred by remoteCaps.
+	for _, remoteCodec := range remoteCaps.Codecs {
+		if isRtxCodec(*remoteCodec) {
+			continue
+		}
+		li := slices.IndexFunc(localCaps.Codecs, func(localCodec *mediasoup.RtpCodecCapability) bool {
+			return matchCodec(*localCodec, *remoteCodec, false, false)
+		})
+		if li < 0 {
+			continue
+		}
+		matchingLocalCodec := localCaps.Codecs[li]
+		extenedCodec := RtpCodecCapabilityEx{
+			RtpCodecCapability: mediasoup.RtpCodecCapability{
+				MimeType:     matchingLocalCodec.MimeType,
+				Kind:         matchingLocalCodec.Kind,
+				ClockRate:    matchingLocalCodec.ClockRate,
+				Channels:     matchingLocalCodec.Channels,
+				RtcpFeedback: reduceRtcpFeedback(*matchingLocalCodec, *remoteCodec),
+			},
+			LocalPayloadType:  matchingLocalCodec.PreferredPayloadType,
+			RemotePayloadType: remoteCodec.PreferredPayloadType,
+			LocalParameters:   matchingLocalCodec.Parameters,
+			RemoteParameters:  remoteCodec.Parameters,
+		}
 
-	// TODO: 融合本地和远端的RtpCapabilities
-	util.Clone(remoteCaps, &extendedRtpCapabilities)
+		extendedRtpCapabilities.Codecs = append(extendedRtpCapabilities.Codecs, &extenedCodec)
+	}
+
+	// Match RTX codecs.
+	for _, extendCodec := range extendedRtpCapabilities.Codecs {
+		li := slices.IndexFunc(localCaps.Codecs, func(localCodec *mediasoup.RtpCodecCapability) bool {
+			return isRtxCodec(*localCodec) && localCodec.Parameters.Apt == extendCodec.LocalPayloadType
+		})
+		ri := slices.IndexFunc(remoteCaps.Codecs, func(remoteCodec *mediasoup.RtpCodecCapability) bool {
+			return isRtxCodec(*remoteCodec) && remoteCodec.Parameters.Apt == extendCodec.RemotePayloadType
+		})
+		if li > 0 && ri > 0 {
+			extendCodec.LocalRtxPayloadType = localCaps.Codecs[li].PreferredPayloadType
+			extendCodec.RemoteRtxPayloadType = remoteCaps.Codecs[ri].PreferredPayloadType
+		}
+	}
+
+	// Match header extensions.
+	for _, remoteExt := range remoteCaps.HeaderExtensions {
+		li := slices.IndexFunc(localCaps.HeaderExtensions, func(localExt *mediasoup.RtpHeaderExtension) bool {
+			return matchHeaderExtension(*localExt, *remoteExt)
+		})
+		if li < 0 {
+			continue
+		}
+		extendedExt := &RtpHeaderExtensionEx{
+			RtpHeaderExtension: RtpHeaderExtension{
+				Kind:             remoteExt.Kind,
+				Uri:              remoteExt.Uri,
+				PreferredId:      remoteExt.PreferredId,
+				PreferredEncrypt: remoteExt.PreferredEncrypt,
+				Direction:        remoteExt.Direction,
+			},
+			SendId:  localCaps.HeaderExtensions[li].PreferredId,
+			RecvId:  remoteExt.PreferredId,
+			Encrypt: localCaps.HeaderExtensions[li].PreferredEncrypt,
+		}
+		extendedRtpCapabilities.HeaderExtensions = append(extendedRtpCapabilities.HeaderExtensions, extendedExt)
+	}
 
 	return extendedRtpCapabilities
 }
 
-func (o Ortc) getRecvRtpCapabilities(extendedRtpCapabilities RtpCapabilities) RtpCapabilities {
+func (o Ortc) getRecvRtpCapabilities(extendedRtpCapabilities RtpCapabilitiesEx) RtpCapabilities {
+	rtpCapabilities := RtpCapabilities{
+		Codecs:           make([]*RtpCodecCapability, 0),
+		HeaderExtensions: make([]*RtpHeaderExtension, 0),
+	}
+	for _, extendedCodec := range extendedRtpCapabilities.Codecs {
+		codec := RtpCodecCapability{
+			MimeType:             extendedCodec.MimeType,
+			Kind:                 extendedCodec.Kind,
+			PreferredPayloadType: extendedCodec.RemotePayloadType,
+			ClockRate:            extendedCodec.ClockRate,
+			Channels:             extendedCodec.Channels,
+			Parameters:           extendedCodec.LocalParameters,
+			RtcpFeedback:         extendedCodec.RtcpFeedback,
+		}
+		rtpCapabilities.Codecs = append(rtpCapabilities.Codecs, &codec)
+		if extendedCodec.LocalRtxPayloadType > 0 {
+			rtpCapabilities.Codecs = append(rtpCapabilities.Codecs, &RtpCodecCapability{
+				MimeType:             fmt.Sprintf("%s/rtx", extendedCodec.Kind),
+				Kind:                 extendedCodec.Kind,
+				PreferredPayloadType: extendedCodec.RemoteRtxPayloadType,
+				ClockRate:            extendedCodec.ClockRate,
+				Channels:             extendedCodec.Channels,
+				Parameters:           RtpCodecSpecificParameters{Apt: extendedCodec.RemotePayloadType},
+				RtcpFeedback:         make([]mediasoup.RtcpFeedback, 0),
+			})
+		}
+	}
 
-	return extendedRtpCapabilities
+	for _, extendedExt := range extendedRtpCapabilities.HeaderExtensions {
+		// Ignore RTP extensions not valid for receiving.
+		if extendedExt.Direction != mediasoup.Direction_Sendrecv && extendedExt.Direction != mediasoup.Direction_Recvonly {
+			continue
+		}
+		ext := RtpHeaderExtension{
+			Kind:             extendedExt.Kind,
+			Uri:              extendedExt.Uri,
+			PreferredId:      extendedExt.RecvId,
+			PreferredEncrypt: extendedExt.Encrypt,
+			Direction:        extendedExt.Direction,
+		}
+		rtpCapabilities.HeaderExtensions = append(rtpCapabilities.HeaderExtensions, &ext)
+	}
+	return rtpCapabilities
 }
 
 // validateRtcpFeedback validates RtcpFeedback. It may modify given data by adding missing
@@ -162,6 +268,8 @@ func (o Ortc) validateRtpParameters(params *mediasoup.RtpParameters) (err error)
 		}
 	}
 
+	// TODO: validate encodings
+
 	return o.validateRtcpParameters(&params.Rtcp)
 }
 
@@ -172,18 +280,15 @@ func (o Ortc) validateRtpCodecParameters(code *mediasoup.RtpCodecParameters) (er
 
 	//  mimeType is mandatory.
 	if !strings.HasPrefix(mimeType, "audio/") && !strings.HasPrefix(mimeType, "video/") {
-		return mediasoup.NewTypeError("invalid codec.mimeType")
+		return mediasoup.NewTypeError("invalid remoteCodec.mimeType")
 	}
 
 	// clockRate is mandatory.
 	if code.ClockRate == 0 {
-		return mediasoup.NewTypeError("missing codec.clockRate")
+		return mediasoup.NewTypeError("missing remoteCodec.clockRate")
 	}
 
-	kind := mediasoup.MediaKind(strings.Split(mimeType, "/")[0])
-
-	// channels is optional. If unset, set it to 1 (just if audio).
-	if kind == mediasoup.MediaKind_Audio && code.Channels == 0 {
+	if code.Channels == 0 {
 		code.Channels = 1
 	}
 
@@ -301,14 +406,14 @@ func (o Ortc) validateSctpStreamParameters(params *mediasoup.SctpStreamParameter
 }
 
 func (o Ortc) addNackSupportForOpus(caps *RtpCapabilities) {
-	for _, codec := range caps.Codecs {
-		if strings.ToLower(codec.MimeType) == "audio/opus" {
-			for _, fb := range codec.RtcpFeedback {
+	for _, remoteCodec := range caps.Codecs {
+		if strings.ToLower(remoteCodec.MimeType) == "audio/opus" {
+			for _, fb := range remoteCodec.RtcpFeedback {
 				if fb.Type == "nack" {
 					return
 				}
 			}
-			codec.RtcpFeedback = append(codec.RtcpFeedback, mediasoup.RtcpFeedback{Type: "nack"})
+			remoteCodec.RtcpFeedback = append(remoteCodec.RtcpFeedback, mediasoup.RtcpFeedback{Type: "nack"})
 		}
 	}
 }

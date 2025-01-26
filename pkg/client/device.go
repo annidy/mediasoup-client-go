@@ -13,7 +13,7 @@ type Device struct {
 	Name                  string
 	recvRtpCapabilities   mediasoup.RtpCapabilities
 	sctpCapabilities      mediasoup.SctpCapabilities
-	extendRtpCapabilities mediasoup.RtpCapabilities
+	extendRtpCapabilities RtpCapabilitiesEx
 	loaded                atomic.Bool
 	handler               *PionHandler
 	canProduceByKind      map[mediasoup.MediaKind]bool
@@ -39,15 +39,25 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 	}
 	var clonedRouterRtpCapabilities mediasoup.RtpCapabilities
 	util.Clone(routerRtpCapabilities, &clonedRouterRtpCapabilities)
-	ortc.validateRtpCapabilities(&clonedRouterRtpCapabilities)
+	if err := ortc.validateRtpCapabilities(&clonedRouterRtpCapabilities); err != nil {
+		panic(err)
+	}
 
 	nativeRtpCapabilities := d.handler.getNativeRouterRtpCapabilities()
 	var clonedNativeRtpCapabilities mediasoup.RtpCapabilities
 	util.Clone(nativeRtpCapabilities, &clonedNativeRtpCapabilities)
-	ortc.validateRtpCapabilities(&clonedNativeRtpCapabilities)
+	if err := ortc.validateRtpCapabilities(&clonedNativeRtpCapabilities); err != nil {
+		panic(err)
+	}
 
 	d.extendRtpCapabilities = ortc.getExtendedRtpCapabilities(clonedNativeRtpCapabilities, clonedRouterRtpCapabilities)
+
+	// TODO: check whether we can produce audio/video
+
 	d.recvRtpCapabilities = ortc.getRecvRtpCapabilities(d.extendRtpCapabilities)
+	if err := ortc.validateRtpCapabilities(&d.recvRtpCapabilities); err != nil {
+		panic(err)
+	}
 	d.sctpCapabilities = d.handler.getNativeSctpCapabilities()
 }
 

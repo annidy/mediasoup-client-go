@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
@@ -30,12 +31,16 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 			continue
 		}
 		for _, rtp := range media.Rtp {
+			channels, err := strconv.ParseInt(rtp.Encoding, 10, 64)
+			if err != nil {
+				channels = 1
+			}
 			codec := &RtpCodecCapability{
 				Kind:                 mediasoup.MediaKind(media.Type),
 				MimeType:             fmt.Sprintf("%s/%s", media.Type, rtp.Codec),
 				PreferredPayloadType: byte(rtp.Payload),
 				ClockRate:            rtp.Rate,
-				Channels:             1,
+				Channels:             int(channels),
 				RtcpFeedback:         []RtcpFeedback{},
 			}
 			codecsMap[codec.PreferredPayloadType] = codec
@@ -82,4 +87,47 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 		Codecs:           slices.Collect(maps.Values(codecsMap)),
 		HeaderExtensions: headerExtensions,
 	}
+}
+
+func isRtxCodec(codec RtpCodecCapability) bool {
+	return strings.HasSuffix(codec.MimeType, "/rtx")
+}
+
+func matchCodec(aCodec, bCodec RtpCodecCapability, strict, modify bool) bool {
+	aMinType := strings.ToLower(aCodec.MimeType)
+	bMinType := strings.ToLower(bCodec.MimeType)
+	if aMinType != bMinType {
+		return false
+	}
+	if aCodec.ClockRate != bCodec.ClockRate {
+		return false
+	}
+	if aCodec.Channels != bCodec.Channels {
+		return false
+	}
+	switch aMinType {
+	case "video/h264":
+		if strict {
+			// TODO: check profile-level-id
+		}
+	case "video/vp9":
+		if strict {
+			// TODO: check profile-id
+		}
+	}
+	return true
+}
+
+func reduceRtcpFeedback(aCodec, bCodec RtpCodecCapability) []RtcpFeedback {
+	var result []RtcpFeedback
+	for _, fb := range bCodec.RtcpFeedback {
+		if slices.Contains(aCodec.RtcpFeedback, fb) {
+			result = append(result, fb)
+		}
+	}
+	return result
+}
+
+func matchHeaderExtension(aExt, bExt RtpHeaderExtension) bool {
+	return aExt.Kind == bExt.Kind && aExt.Uri == bExt.Uri
 }

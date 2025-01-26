@@ -72,9 +72,10 @@ type Sdp struct {
 		Protocol string `json:"protocol,omitempty"`
 		Ptime    int    `json:"ptime,omitempty"`
 		Rtp      []struct {
-			Codec   string `json:"codec,omitempty"`
-			Payload int    `json:"payload,omitempty"`
-			Rate    int    `json:"rate,omitempty"`
+			Codec    string `json:"codec,omitempty"`
+			Payload  int    `json:"payload,omitempty"`
+			Rate     int    `json:"rate,omitempty"`
+			Encoding string `json:"encoding,omitempty"`
 		} `json:"rtp,omitempty"`
 		Type   string `json:"type,omitempty"`
 		RtcpFb []struct {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/jiyeyuran/mediasoup-go/h264"
 )
 
 func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities) {
@@ -47,8 +48,11 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 			parameters := sdp.ParseParams(fmtp.Config)
 			if codec, ok := codecsMap[byte(fmtp.Payload)]; ok {
 				codec.Parameters.ProfileLevelId = parameters.ProfileLevelId
-				if parameters.PacketizationMode > 0 {
-					var PacketizationMode uint8 = uint8(parameters.PacketizationMode)
+				if parameters.PacketizationMode != nil {
+					var PacketizationMode uint8 = uint8(*parameters.PacketizationMode)
+					codec.Parameters.PacketizationMode = &PacketizationMode
+				} else if codec.MimeType == "video/H264" {
+					var PacketizationMode uint8 = 1
 					codec.Parameters.PacketizationMode = &PacketizationMode
 				}
 				codec.Parameters.LevelAsymmetryAllowed = uint8(parameters.LevelAsymmetryAllowed)
@@ -103,7 +107,7 @@ func isRtxCodec(codec RtpCodecCapability) bool {
 	return strings.HasSuffix(codec.MimeType, "/rtx")
 }
 
-func matchCodec(aCodec, bCodec RtpCodecCapability, strict, modify bool) bool {
+func matchCodec(aCodec, bCodec *RtpCodecCapability, strict, modify bool) bool {
 	aMinType := strings.ToLower(aCodec.MimeType)
 	bMinType := strings.ToLower(bCodec.MimeType)
 	if aMinType != bMinType {
@@ -120,11 +124,56 @@ func matchCodec(aCodec, bCodec RtpCodecCapability, strict, modify bool) bool {
 	switch aMinType {
 	case "video/h264":
 		if strict {
-			// TODO: check profile-level-id
+			var aPacketizationMode, bPacketizationMode byte
+			if aCodec.Parameters.PacketizationMode != nil {
+				aPacketizationMode = byte(*aCodec.Parameters.PacketizationMode)
+			}
+			if bCodec.Parameters.PacketizationMode != nil {
+				bPacketizationMode = byte(*bCodec.Parameters.PacketizationMode)
+			}
+			if aPacketizationMode != bPacketizationMode {
+				return false
+			}
+			if !h264.IsSameProfile(aCodec.Parameters.ProfileLevelId, bCodec.Parameters.ProfileLevelId) {
+				return false
+			}
+			// profileLevelId1 := h264.ParseSdpProfileLevelId(aCodec.Parameters.ProfileLevelId)
+			// if profileLevelId1.Profile == h264.ProfileMain {
+			// 	return false
+			// }
+
+			if modify {
+				if selectedProfileLevelId, err := h264.GenerateProfileLevelIdForAnswer(
+					h264.RtpParameter{
+						ProfileLevelId:        aCodec.Parameters.ProfileLevelId,
+						PacketizationMode:     &aPacketizationMode,
+						LevelAsymmetryAllowed: aCodec.Parameters.LevelAsymmetryAllowed,
+					},
+					h264.RtpParameter{
+						ProfileLevelId:        bCodec.Parameters.ProfileLevelId,
+						PacketizationMode:     &bPacketizationMode,
+						LevelAsymmetryAllowed: aCodec.Parameters.LevelAsymmetryAllowed,
+					}); err == nil {
+					aCodec.Parameters.ProfileLevelId = selectedProfileLevelId
+					bCodec.Parameters.ProfileLevelId = selectedProfileLevelId
+				} else {
+					aCodec.Parameters.ProfileLevelId = ""
+					bCodec.Parameters.ProfileLevelId = ""
+				}
+			}
 		}
 	case "video/vp9":
 		if strict {
-			// TODO: check profile-id
+			var aPacketizationMode, bPacketizationMode byte
+			if aCodec.Parameters.PacketizationMode != nil {
+				aPacketizationMode = byte(*aCodec.Parameters.PacketizationMode)
+			}
+			if bCodec.Parameters.PacketizationMode != nil {
+				bPacketizationMode = byte(*bCodec.Parameters.PacketizationMode)
+			}
+			if aPacketizationMode != bPacketizationMode {
+				return false
+			}
 		}
 	}
 	return true
@@ -140,6 +189,6 @@ func reduceRtcpFeedback(aCodec, bCodec RtpCodecCapability) []RtcpFeedback {
 	return result
 }
 
-func matchHeaderExtension(aExt, bExt RtpHeaderExtension) bool {
+func matchHeaderExtension(aExt, bExt *RtpHeaderExtension) bool {
 	return aExt.Kind == bExt.Kind && aExt.Uri == bExt.Uri
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/rs/zerolog/log"
 )
 
 type Ortc struct{}
@@ -106,21 +107,12 @@ func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps RtpCapabilities) 
 		HeaderExtensions: make([]*RtpHeaderExtensionEx, 0),
 	}
 	// Match media codecs and keep the order preferred by remoteCaps.
-	usedMap := make(map[*mediasoup.RtpCodecCapability]bool)
 	for _, remoteCodec := range remoteCaps.Codecs {
 		if isRtxCodec(*remoteCodec) {
 			continue
 		}
 		li := slices.IndexFunc(localCaps.Codecs, func(localCodec *mediasoup.RtpCodecCapability) bool {
-			if matchCodec(*localCodec, *remoteCodec, false, false) {
-				// 剔除重复的codec
-				if _, ok := usedMap[localCodec]; ok {
-					return false
-				}
-				usedMap[localCodec] = true
-				return true
-			}
-			return false
+			return matchCodec(localCodec, remoteCodec, true, true)
 		})
 		if li < 0 {
 			continue
@@ -160,7 +152,7 @@ func (o Ortc) getExtendedRtpCapabilities(localCaps, remoteCaps RtpCapabilities) 
 	// Match header extensions.
 	for _, remoteExt := range remoteCaps.HeaderExtensions {
 		li := slices.IndexFunc(localCaps.HeaderExtensions, func(localExt *mediasoup.RtpHeaderExtension) bool {
-			return matchHeaderExtension(*localExt, *remoteExt)
+			return matchHeaderExtension(localExt, remoteExt)
 		})
 		if li < 0 {
 			continue
@@ -196,6 +188,9 @@ func (o Ortc) getRecvRtpCapabilities(extendedRtpCapabilities RtpCapabilitiesEx) 
 		HeaderExtensions: make([]*RtpHeaderExtension, 0),
 	}
 	for _, extendedCodec := range extendedRtpCapabilities.Codecs {
+		if extendedCodec.Kind == mediasoup.MediaKind_Video && extendedCodec.RemoteRtxPayloadType == 0 {
+			log.Warn().Msgf("codec %s without rtx", extendedCodec.MimeType)
+		}
 		codec := RtpCodecCapability{
 			MimeType:             extendedCodec.MimeType,
 			Kind:                 extendedCodec.Kind,

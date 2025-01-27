@@ -176,6 +176,6 @@ type SpdParams struct {
 	Useinbandfec          int    `json:"useinbandfec,omitempty"`
 	ProfileId             int    `json:"profile-id,omitempty"`
 	ProfileLevelId        string `json:"profile-level-id,omitempty"`
-	PacketizationMode     int    `json:"packetization-mode,omitempty"`
+	PacketizationMode     *int   `json:"packetization-mode,omitempty"`
 	LevelAsymmetryAllowed int    `json:"level-asymmetry-allowed,omitempty"`
 }

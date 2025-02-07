@@ -103,21 +103,21 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 	}
 }
 
-func isRtxCodec(codec RtpCodecCapability) bool {
-	return strings.HasSuffix(codec.MimeType, "/rtx")
+func isRtxCodec(codec RtpCodec) bool {
+	return strings.HasSuffix(codec.MimeType(), "/rtx")
 }
 
-func matchCodec(aCodec, bCodec *RtpCodecCapability, strict, modify bool) bool {
-	aMinType := strings.ToLower(aCodec.MimeType)
-	bMinType := strings.ToLower(bCodec.MimeType)
+func matchCodec(aCodec, bCodec RtpCodec, strict, modify bool) bool {
+	aMinType := strings.ToLower(aCodec.MimeType())
+	bMinType := strings.ToLower(bCodec.MimeType())
 	if aMinType != bMinType {
 		return false
 	}
-	if aCodec.Kind == mediasoup.MediaKind_Audio {
-		if aCodec.ClockRate != bCodec.ClockRate {
+	if aCodec.HasKind() && aCodec.Kind() == mediasoup.MediaKind_Audio {
+		if aCodec.ClockRate() != bCodec.ClockRate() {
 			return false
 		}
-		if aCodec.Channels != bCodec.Channels {
+		if aCodec.Channels() != bCodec.Channels() {
 			return false
 		}
 	}
@@ -125,16 +125,17 @@ func matchCodec(aCodec, bCodec *RtpCodecCapability, strict, modify bool) bool {
 	case "video/h264":
 		if strict {
 			var aPacketizationMode, bPacketizationMode byte
-			if aCodec.Parameters.PacketizationMode != nil {
-				aPacketizationMode = byte(*aCodec.Parameters.PacketizationMode)
+			aParameters, bParameters := aCodec.Parameters(), bCodec.Parameters()
+			if aCodec.Parameters().PacketizationMode != nil {
+				aPacketizationMode = byte(*aParameters.PacketizationMode)
 			}
-			if bCodec.Parameters.PacketizationMode != nil {
-				bPacketizationMode = byte(*bCodec.Parameters.PacketizationMode)
+			if bCodec.Parameters().PacketizationMode != nil {
+				bPacketizationMode = byte(*bParameters.PacketizationMode)
 			}
 			if aPacketizationMode != bPacketizationMode {
 				return false
 			}
-			if !h264.IsSameProfile(aCodec.Parameters.ProfileLevelId, bCodec.Parameters.ProfileLevelId) {
+			if !h264.IsSameProfile(aParameters.ProfileLevelId, bParameters.ProfileLevelId) {
 				return false
 			}
 			// profileLevelId1 := h264.ParseSdpProfileLevelId(aCodec.Parameters.ProfileLevelId)
@@ -145,31 +146,32 @@ func matchCodec(aCodec, bCodec *RtpCodecCapability, strict, modify bool) bool {
 			if modify {
 				if selectedProfileLevelId, err := h264.GenerateProfileLevelIdForAnswer(
 					h264.RtpParameter{
-						ProfileLevelId:        aCodec.Parameters.ProfileLevelId,
+						ProfileLevelId:        aParameters.ProfileLevelId,
 						PacketizationMode:     &aPacketizationMode,
-						LevelAsymmetryAllowed: aCodec.Parameters.LevelAsymmetryAllowed,
+						LevelAsymmetryAllowed: aParameters.LevelAsymmetryAllowed,
 					},
 					h264.RtpParameter{
-						ProfileLevelId:        bCodec.Parameters.ProfileLevelId,
+						ProfileLevelId:        bParameters.ProfileLevelId,
 						PacketizationMode:     &bPacketizationMode,
-						LevelAsymmetryAllowed: aCodec.Parameters.LevelAsymmetryAllowed,
+						LevelAsymmetryAllowed: aParameters.LevelAsymmetryAllowed,
 					}); err == nil {
-					aCodec.Parameters.ProfileLevelId = selectedProfileLevelId
-					bCodec.Parameters.ProfileLevelId = selectedProfileLevelId
+					aParameters.ProfileLevelId = selectedProfileLevelId
+					bParameters.ProfileLevelId = selectedProfileLevelId
 				} else {
-					aCodec.Parameters.ProfileLevelId = ""
-					bCodec.Parameters.ProfileLevelId = ""
+					aParameters.ProfileLevelId = ""
+					bParameters.ProfileLevelId = ""
 				}
 			}
 		}
 	case "video/vp9":
 		if strict {
 			var aPacketizationMode, bPacketizationMode byte
-			if aCodec.Parameters.PacketizationMode != nil {
-				aPacketizationMode = byte(*aCodec.Parameters.PacketizationMode)
+			aParameters, bParameters := aCodec.Parameters(), bCodec.Parameters()
+			if aParameters.PacketizationMode != nil {
+				aPacketizationMode = byte(*aParameters.PacketizationMode)
 			}
-			if bCodec.Parameters.PacketizationMode != nil {
-				bPacketizationMode = byte(*bCodec.Parameters.PacketizationMode)
+			if bParameters.PacketizationMode != nil {
+				bPacketizationMode = byte(*bParameters.PacketizationMode)
 			}
 			if aPacketizationMode != bPacketizationMode {
 				return false

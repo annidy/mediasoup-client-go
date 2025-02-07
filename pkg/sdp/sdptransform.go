@@ -86,16 +86,17 @@ type Sdp struct {
 			Config  string `json:"config,omitempty"`
 			Payload int    `json:"payload,omitempty"`
 		} `json:"fmtp,omitempty"`
-		IceOptions string `json:"iceOptions,omitempty"`
-		IcePwd     string `json:"icePwd,omitempty"`
-		IceUfrag   string `json:"iceUfrag,omitempty"`
-		Maxptime   int    `json:"maxptime,omitempty"`
-		Mid        string `json:"mid,omitempty"`
-		Payloads   string `json:"payloads,omitempty"`
-		Port       int    `json:"port,omitempty"`
-		Protocol   string `json:"protocol,omitempty"`
-		Ptime      int    `json:"ptime,omitempty"`
-		Rtcp       struct {
+		IceOptions      string `json:"iceOptions,omitempty"`
+		EndOfCandidates string `json:"end-of-candidates,omitempty"`
+		IcePwd          string `json:"icePwd,omitempty"`
+		IceUfrag        string `json:"iceUfrag,omitempty"`
+		Maxptime        int    `json:"maxptime,omitempty"`
+		Mid             string `json:"mid,omitempty"`
+		Payloads        string `json:"payloads,omitempty"`
+		Port            int    `json:"port,omitempty"`
+		Protocol        string `json:"protocol,omitempty"`
+		Ptime           int    `json:"ptime,omitempty"`
+		Rtcp            struct {
 			Address string `json:"address,omitempty"`
 			IPVer   int    `json:"ipVer,omitempty"`
 			NetType string `json:"netType,omitempty"`

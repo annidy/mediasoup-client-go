@@ -2,7 +2,12 @@ package room
 
 import (
 	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/annidy/mediasoup-client/internal/util"
 	"github.com/annidy/mediasoup-client/pkg/client"
@@ -11,9 +16,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jiyeyuran/go-protoo"
 	"github.com/jiyeyuran/go-protoo/transport"
+	"github.com/jiyeyuran/mediasoup-go"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/json-iterator/go/extra"
 	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
+	"github.com/pion/webrtc/v4/pkg/media/ivfreader"
+	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 	"github.com/rs/zerolog/log"
 )
 
@@ -44,6 +53,12 @@ func NewRoomClient() *RoomClient {
 		peers:   make(map[string]*proto.PeerData),
 	}
 }
+
+const (
+	audioFileName   = "output.ogg"
+	videoFileName   = "output.ivf"
+	oggPageDuration = time.Millisecond * 20
+)
 
 // 加入房间
 func (r *RoomClient) Join(wss string) {
@@ -154,6 +169,183 @@ func (r *RoomClient) EnableWebcam() {
 	// - createProducer
 }
 
+func (r *RoomClient) EnableLocalFile() {
+	_, err := os.Stat(videoFileName)
+	haveVideoFile := !os.IsNotExist(err)
+
+	_, err = os.Stat(audioFileName)
+	haveAudioFile := !os.IsNotExist(err)
+
+	if !haveAudioFile && !haveVideoFile {
+		panic("Could not find `" + audioFileName + "` or `" + videoFileName + "`")
+	}
+
+	if haveVideoFile {
+		file, openErr := os.Open(videoFileName)
+		if openErr != nil {
+			panic(openErr)
+		}
+
+		_, header, openErr := ivfreader.NewWith(file)
+		if openErr != nil {
+			panic(openErr)
+		}
+
+		// Determine video codec
+		var trackCodec string
+		switch header.FourCC {
+		case "AV01":
+			trackCodec = webrtc.MimeTypeAV1
+		case "VP90":
+			trackCodec = webrtc.MimeTypeVP9
+		case "VP80":
+			trackCodec = webrtc.MimeTypeVP8
+		default:
+			panic(fmt.Sprintf("Unable to handle FourCC %s", header.FourCC))
+		}
+
+		// Create a video track
+		videoTrack, videoTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: trackCodec}, "video", "pion")
+		if videoTrackErr != nil {
+			panic(videoTrackErr)
+		}
+
+		_ = r.sendTransport.Produce(client.TransportProduceOptions{
+			Track: videoTrack,
+			Codec: &mediasoup.RtpCodecParameters{
+				MimeType: trackCodec,
+			},
+			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
+				// Read incoming RTCP packets
+				// Before these packets are returned they are processed by interceptors. For things
+				// like NACK this needs to be called.
+				go func() {
+					rtcpBuf := make([]byte, 1500)
+					for {
+						if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
+							return
+						}
+					}
+				}()
+			},
+		})
+
+		go func() {
+			// Open a IVF file and start reading using our IVFReader
+			file, ivfErr := os.Open(videoFileName)
+			if ivfErr != nil {
+				panic(ivfErr)
+			}
+
+			ivf, header, ivfErr := ivfreader.NewWith(file)
+			if ivfErr != nil {
+				panic(ivfErr)
+			}
+
+			// Wait for connection established
+			// <-iceConnectedCtx.Done()
+
+			// Send our video file frame at a time. Pace our sending so we send it at the same speed it should be played back as.
+			// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
+			//
+			// It is important to use a time.Ticker instead of time.Sleep because
+			// * avoids accumulating skew, just calling time.Sleep didn't compensate for the time spent parsing the data
+			// * works around latency issues with Sleep (see https://github.com/golang/go/issues/44343)
+			ticker := time.NewTicker(time.Millisecond * time.Duration((float32(header.TimebaseNumerator)/float32(header.TimebaseDenominator))*1000))
+			defer ticker.Stop()
+			for ; true; <-ticker.C {
+				frame, _, ivfErr := ivf.ParseNextFrame()
+				if errors.Is(ivfErr, io.EOF) {
+					fmt.Printf("All video frames parsed and sent")
+					os.Exit(0)
+				}
+
+				if ivfErr != nil {
+					panic(ivfErr)
+				}
+
+				if ivfErr = videoTrack.WriteSample(media.Sample{Data: frame, Duration: time.Second}); ivfErr != nil {
+					panic(ivfErr)
+				}
+			}
+		}()
+	}
+
+	if haveAudioFile {
+		// Create a audio track
+		audioTrack, audioTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
+		if audioTrackErr != nil {
+			panic(audioTrackErr)
+		}
+
+		_ = r.sendTransport.Produce(client.TransportProduceOptions{
+			Track: audioTrack,
+			Codec: &mediasoup.RtpCodecParameters{
+				MimeType: webrtc.MimeTypeOpus,
+			},
+			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
+				// Read incoming RTCP packets
+				// Before these packets are returned they are processed by interceptors. For things
+				// like NACK this needs to be called.
+				go func() {
+					rtcpBuf := make([]byte, 1500)
+					for {
+						if _, _, rtcpErr := rtpSender.Read(rtcpBuf); rtcpErr != nil {
+							return
+						}
+					}
+				}()
+			},
+		})
+
+		go func() {
+			// Open a OGG file and start reading using our OGGReader
+			file, oggErr := os.Open(audioFileName)
+			if oggErr != nil {
+				panic(oggErr)
+			}
+
+			// Open on oggfile in non-checksum mode.
+			ogg, _, oggErr := oggreader.NewWith(file)
+			if oggErr != nil {
+				panic(oggErr)
+			}
+
+			// Wait for connection established
+			// <-iceConnectedCtx.Done()
+
+			// Keep track of last granule, the difference is the amount of samples in the buffer
+			var lastGranule uint64
+
+			// It is important to use a time.Ticker instead of time.Sleep because
+			// * avoids accumulating skew, just calling time.Sleep didn't compensate for the time spent parsing the data
+			// * works around latency issues with Sleep (see https://github.com/golang/go/issues/44343)
+			ticker := time.NewTicker(oggPageDuration)
+			defer ticker.Stop()
+			for ; true; <-ticker.C {
+				pageData, pageHeader, oggErr := ogg.ParseNextPage()
+				if errors.Is(oggErr, io.EOF) {
+					fmt.Printf("All audio pages parsed and sent")
+					os.Exit(0)
+				}
+
+				if oggErr != nil {
+					panic(oggErr)
+				}
+
+				// The amount of samples is the difference between the last and current timestamp
+				sampleCount := float64(pageHeader.GranulePosition - lastGranule)
+				lastGranule = pageHeader.GranulePosition
+				sampleDuration := time.Duration((sampleCount/48000)*1000) * time.Millisecond
+
+				if oggErr = audioTrack.WriteSample(media.Sample{Data: pageData, Duration: sampleDuration}); oggErr != nil {
+					panic(oggErr)
+				}
+			}
+		}()
+	}
+}
+
 func (r *RoomClient) DisableWebcam() {
 	if r.webcamProducer == nil {
 		return
@@ -231,7 +423,7 @@ func (r *RoomClient) joinRoom() {
 	r.device.Load(rtpCapabilities)
 
 	if r.produce {
-		var transportOptions client.TransportOptions
+		var transportOptions client.DeviceCreateTransportOptions
 
 		if err := r.peer.RequestData("createWebRtcTransport", proto.CreateWebrtcTransportRequest{
 			ForceTcp:         false,
@@ -272,7 +464,7 @@ func (r *RoomClient) joinRoom() {
 
 	if r.consume {
 
-		var transportOptions client.TransportOptions
+		var transportOptions client.DeviceCreateTransportOptions
 
 		if err := r.peer.RequestData("createWebRtcTransport", proto.CreateWebrtcTransportRequest{
 			ForceTcp:         false,
@@ -313,8 +505,9 @@ func (r *RoomClient) joinRoom() {
 
 	// Enable mic/webcam.
 	if r.produce {
-		r.EnableMic()
-		r.EnableWebcam()
+		// r.EnableMic()
+		// r.EnableWebcam()
+		r.EnableLocalFile()
 
 		r.sendTransport.On("connectionstatechange", func(connectionState webrtc.PeerConnectionState) {
 			if connectionState == webrtc.PeerConnectionStateConnected {

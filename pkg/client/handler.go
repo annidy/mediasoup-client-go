@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/annidy/mediasoup-client/internal/util"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/pion/webrtc/v4"
@@ -13,7 +14,7 @@ type HandlerRunOptions struct {
 	iceCandidates          []*IceCandidate
 	dtlsParameters         *DtlsParameters
 	sctpParameters         *SctpParameters
-	extenedRtpCapabilities RtpCapabilitiesEx
+	extenedRtpCapabilities *RtpCapabilitiesEx
 }
 
 type Handler interface {
@@ -21,22 +22,30 @@ type Handler interface {
 	getNativeRouterRtpCapabilities() mediasoup.RtpCapabilities
 	getNativeSctpCapabilities() mediasoup.SctpCapabilities
 	run(options HandlerRunOptions)
-	restartIce(iceServers []mediasoup.IceParameters)
+	restartIce(iceParameters *mediasoup.IceParameters)
 }
 
 type PionHandler struct {
 	mediasoup.IEventEmitter
-	direction string
-	remoteSdp *RemoteSdp
-	pc        *webrtc.PeerConnection
+	direction                        string
+	remoteSdp                        *RemoteSdp
+	sendingRtpParametersByKind       map[string]*RtpParameters
+	sendingRemoteRtpParametersByKind map[string]*RtpParameters
+	pc                               *webrtc.PeerConnection
+	mapMidTransceiver                map[string]*webrtc.RTPTransceiver
 }
+
+var _ Handler = (*PionHandler)(nil)
 
 func NewPionHandler() *PionHandler {
-	return &PionHandler{}
+	return &PionHandler{
+		IEventEmitter:     mediasoup.NewEventEmitter(),
+		mapMidTransceiver: make(map[string]*webrtc.RTPTransceiver),
+	}
 }
 
-func (h *PionHandler) getNativeRtpCapabilities() mediasoup.RtpCapabilities {
-	return mediasoup.RtpCapabilities{}
+func (h *PionHandler) getNativeRtpCapabilities() RtpCapabilities {
+	return h.getNativeRouterRtpCapabilities()
 }
 
 func (h *PionHandler) getNativeRouterRtpCapabilities() RtpCapabilities {
@@ -88,6 +97,14 @@ func (h *PionHandler) run(options HandlerRunOptions) {
 	h.direction = options.direction
 
 	h.remoteSdp = NewRemoteSdp(options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters)
+	h.sendingRtpParametersByKind = map[string]*RtpParameters{
+		"audio": ortc.getSendingRtpParameters(mediasoup.MediaKind_Audio, options.extenedRtpCapabilities),
+		"video": ortc.getSendingRtpParameters(mediasoup.MediaKind_Video, options.extenedRtpCapabilities),
+	}
+	h.sendingRemoteRtpParametersByKind = map[string]*RtpParameters{
+		"audio": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Audio, options.extenedRtpCapabilities),
+		"video": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Video, options.extenedRtpCapabilities),
+	}
 
 	config := webrtc.Configuration{
 		// TODO: iceServers
@@ -106,4 +123,85 @@ func (h *PionHandler) run(options HandlerRunOptions) {
 		h.Emit("@connectionstatechange", state)
 	})
 	h.pc = pc
+}
+
+type HandlerSendOptions struct {
+	track        webrtc.TrackLocal
+	codecOptions []*mediasoup.RtpCodecParameters
+	codec        *mediasoup.RtpCodecParameters
+	onRtpSender  func(*webrtc.RTPSender)
+}
+
+func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParameters *RtpParameters, rtpSender RTCRtpSender) {
+	track, codecOptions, codec, onRtpSender := options.track, options.codecOptions, options.codec, options.onRtpSender
+
+	var sendingRtpParameters, sendingRemoteRtpParameters RtpParameters
+	util.Clone(h.sendingRtpParametersByKind[track.Kind().String()], &sendingRtpParameters)
+
+	sendingRtpParameters.Codecs = ortc.reduceCodecs(sendingRtpParameters.Codecs, codec)
+
+	util.Clone(h.sendingRemoteRtpParametersByKind[track.Kind().String()], &sendingRemoteRtpParameters)
+	sendingRemoteRtpParameters.Codecs = ortc.reduceCodecs(sendingRemoteRtpParameters.Codecs, codec)
+
+	mediaSectionIdx, mediaSectionReuseMid := h.remoteSdp.getNextMediaSectionIdx()
+
+	transceiver, err := h.pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
+	if err != nil {
+		panic(err)
+	}
+	if onRtpSender != nil {
+		onRtpSender(transceiver.Sender())
+	}
+
+	offer, err := h.pc.CreateOffer(nil)
+	if err != nil {
+		panic(err)
+	}
+	localSdpObject := sdp.Parse(offer.SDP)
+
+	// TODO: setupTransport
+
+	h.pc.SetLocalDescription(offer)
+
+	// We can now get the transceiver.mid.
+	localId = transceiver.Mid()
+
+	// Set MID
+	sendingRtpParameters.Mid = localId
+
+	// Why reparse?
+	localSdpObject = sdp.Parse(h.pc.LocalDescription().SDP)
+
+	offerMediaObject := localSdpObject.Media[mediaSectionIdx]
+
+	sendingRtpParameters.Rtcp.Cname = sdp.GetCname(offerMediaObject)
+	sendingRtpParameters.Encodings = sdp.GetRtpEncodings(offerMediaObject)
+
+	h.remoteSdp.send(SendTransportOptions{
+		offerMediaObject:    offerMediaObject,
+		reuseMid:            mediaSectionReuseMid,
+		offerRtpParameters:  sendingRtpParameters,
+		answerRtpParameters: sendingRemoteRtpParameters,
+		codecOptions:        codecOptions,
+		extmapAllowMixed:    true,
+	})
+
+	answer := webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  h.remoteSdp.getSdp(),
+	}
+
+	h.pc.SetRemoteDescription(answer)
+
+	// Store in the map.
+	h.mapMidTransceiver[localId] = transceiver
+
+	return localId, &sendingRtpParameters, transceiver.Sender()
+}
+
+func (h *PionHandler) restartIce(iceParameters *mediasoup.IceParameters) {
+	// Provide the remote SDP handler with new remote ICE parameters.
+	h.remoteSdp.updateIceParameters(iceParameters)
 }

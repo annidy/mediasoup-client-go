@@ -1,2 +1,4 @@
 config.toml
 __debug_bin*
+output.ivf
+output.ogg

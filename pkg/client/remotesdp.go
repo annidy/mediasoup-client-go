@@ -1,6 +1,9 @@
 package client
 
-import "github.com/annidy/mediasoup-client/pkg/sdp"
+import (
+	"github.com/annidy/mediasoup-client/pkg/sdp"
+	"github.com/jiyeyuran/mediasoup-go"
+)
 
 type RemoteSdp struct {
 	iceParameters  *IceParameters
@@ -13,6 +16,8 @@ type RemoteSdp struct {
 	MidToIndex map[string]int
 	firstMid   string
 	sdpObject  sdp.Sdp
+
+	mediaSections []*sdp.MediaSection
 }
 
 // TODO: iceParameters、iceCandidates、sctpParameters
@@ -77,4 +82,44 @@ func NewRemoteSdp(iceParameters *IceParameters, iceCandidates []*IceCandidate, d
 	// TODO: support plain RTP parameters
 
 	return rdp
+}
+
+func (rdp *RemoteSdp) getNextMediaSectionIdx() (idx int, reuseMid string) {
+	for i, sec := range rdp.mediaSections {
+		if sec.Closed() {
+			return i, sec.Mid()
+		}
+	}
+	return len(rdp.mediaSections), ""
+}
+
+func (rdp *RemoteSdp) updateIceParameters(iceParameters *mediasoup.IceParameters) {
+	rdp.iceParameters = iceParameters
+	if iceParameters.IceLite {
+		rdp.sdpObject.IceLite = "ice-lite"
+	} else {
+		rdp.sdpObject.IceLite = ""
+	}
+	for _, mediaSection := range rdp.mediaSections {
+		mediaSection.SetIceParameters(iceParameters)
+	}
+}
+
+type SendTransportOptions struct {
+	offerMediaObject    interface{}
+	reuseMid            string
+	offerRtpParameters  mediasoup.RtpParameters
+	answerRtpParameters mediasoup.RtpParameters
+	codecOptions        []*mediasoup.RtpCodecParameters
+	extmapAllowMixed    bool
+}
+
+func (rdp *RemoteSdp) send(options SendTransportOptions) {
+
+}
+
+func (rdp *RemoteSdp) getSdp() string {
+	rdp.sdpObject.Origin.SessionVersion++
+
+	return sdp.Write(rdp.sdpObject)
 }

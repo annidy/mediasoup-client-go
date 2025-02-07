@@ -2,6 +2,7 @@ package client
 
 import (
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/pion/webrtc/v4"
 )
 
 type Transport struct {
@@ -13,28 +14,31 @@ type Transport struct {
 	DtlsParameters          *DtlsParameters
 	SctpParameters          *SctpParameters
 	IceServers              []string
-	extendedRtpCapabilities RtpCapabilitiesEx
+	extendedRtpCapabilities *RtpCapabilitiesEx
+	closed                  bool
 
-	handler *PionHandler
+	handler   *PionHandler
+	producers map[string]*Producer
 }
 
-type TransportOptions struct {
+type DeviceCreateTransportOptions struct {
 	direction               string
 	Id                      string          `json:"id,omitempty"`
 	IceParameters           *IceParameters  `json:"iceParameters,omitempty"`
 	IceCandidates           []*IceCandidate `json:"iceCandidates,omitempty"`
 	DtlsParameters          *DtlsParameters `json:"dtlsParameters,omitempty"`
 	SctpParameters          *SctpParameters `json:"sctpParameters,omitempty"`
-	extendedRtpCapabilities RtpCapabilitiesEx
+	extendedRtpCapabilities *RtpCapabilitiesEx
 }
 
-func NewTransport(options TransportOptions) *Transport {
+func newTransport(options DeviceCreateTransportOptions) *Transport {
 	transport := &Transport{
 		IEventEmitter:           mediasoup.NewEventEmitter(),
 		id:                      options.Id,
 		direction:               options.direction,
 		extendedRtpCapabilities: options.extendedRtpCapabilities,
 		handler:                 NewPionHandler(),
+		producers:               make(map[string]*Producer),
 	}
 
 	transport.handler.run(HandlerRunOptions{
@@ -51,8 +55,44 @@ func NewTransport(options TransportOptions) *Transport {
 	return transport
 }
 
-func (t *Transport) Produce() *Producer {
-	return nil
+type TransportProduceOptions struct {
+	Track        webrtc.TrackLocal
+	codecOptions []*mediasoup.RtpCodecParameters
+	Codec        *mediasoup.RtpCodecParameters
+	OnRtpSender  func(*webrtc.RTPSender)
+}
+
+func (t *Transport) Produce(options TransportProduceOptions) *Producer {
+	track, codecOptions, codec, onRtpSender := options.Track, options.codecOptions, options.Codec, options.OnRtpSender
+
+	localId, rtpParameters, _ := t.handler.send(HandlerSendOptions{
+		track:        track,
+		codecOptions: codecOptions,
+		codec:        codec,
+		onRtpSender:  onRtpSender,
+	})
+
+	// This will fill rtpParameters's missing fields with default values.
+	ortc.validateRtpParameters(rtpParameters)
+
+	t.SafeEmit("produce", track.Kind().String(), rtpParameters)
+
+	// TODO: id from server
+	id := ""
+
+	producer := NewProducer(ProducerOptions{
+		Id:            id,
+		LocalId:       localId,
+		Kind:          mediasoup.MediaKind(track.Kind().String()),
+		RtpParameters: rtpParameters,
+	})
+
+	t.producers[id] = producer
+	t.handleProducer(producer)
+
+	t.SafeEmit("newproducer", producer)
+
+	return producer
 }
 
 func (t *Transport) ProduceData(options DataProducerOptions) *DataProducer {
@@ -60,7 +100,15 @@ func (t *Transport) ProduceData(options DataProducerOptions) *DataProducer {
 }
 
 func (t *Transport) Id() string {
-	return ""
+	return t.id
+}
+
+func (t *Transport) Closed() bool {
+	return t.closed
+}
+
+func (t *Transport) Direction() string {
+	return t.direction
 }
 
 func (t *Transport) RestartIce(iceParameters IceParameters) {
@@ -68,5 +116,53 @@ func (t *Transport) RestartIce(iceParameters IceParameters) {
 }
 
 func (t *Transport) handleHandler() {
+	handler := t.handler
+	handler.On("@connect", func(dtlsParameters *DtlsParameters) {
+		if !t.closed {
+			t.SafeEmit("connect", dtlsParameters)
+		}
+	})
 
+	handler.On("@iceconnectionstatechange", func(state string) {
+		if !t.closed {
+			t.SafeEmit("iceconnectionstatechange", state)
+		}
+	})
+
+	handler.On("@connectionstatechange", func(state string) {
+		if !t.closed {
+			t.SafeEmit("connectionstatechange", state)
+		}
+	})
+}
+
+func (t *Transport) handleProducer(producer *Producer) {
+	producer.On("@close", func() {
+		delete(t.producers, producer.Id())
+
+		if t.closed {
+			return
+		}
+	})
+
+	producer.On("@pause", func() {
+		// TODO: handler pauseSending
+	})
+
+	producer.On("@resume", func() {
+		// TODO: handler resumeSending
+	})
+	producer.On("@replacetrack", func() {
+		// TODO: handler replaceTrack
+	})
+	producer.On("@setmaxspatiallayers", func() {
+		// TODO: handler setMaxSpatialLayers
+	})
+	producer.On("@setrtpencodingparameters", func() {
+		// TODO: handler setRtpEncodingParameters
+	})
+
+	producer.On("@getstats", func() {
+		// TODO: handler getStats
+	})
 }

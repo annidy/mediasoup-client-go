@@ -13,7 +13,7 @@ type Device struct {
 	Name                    string
 	recvRtpCapabilities     mediasoup.RtpCapabilities
 	sctpCapabilities        mediasoup.SctpCapabilities
-	extendedRtpCapabilities RtpCapabilitiesEx
+	extendedRtpCapabilities *RtpCapabilitiesEx
 	loaded                  atomic.Bool
 	handler                 *PionHandler
 	canProduceByKind        map[mediasoup.MediaKind]bool
@@ -61,19 +61,19 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 	d.sctpCapabilities = d.handler.getNativeSctpCapabilities()
 }
 
-func (d *Device) CreateSendTransport(options TransportOptions) *Transport {
+func (d *Device) CreateSendTransport(options DeviceCreateTransportOptions) *Transport {
 	options.direction = "send"
 	return d.createTransport(options)
 }
 
-func (d *Device) CreateRecvTransport(options TransportOptions) *Transport {
+func (d *Device) CreateRecvTransport(options DeviceCreateTransportOptions) *Transport {
 	options.direction = "recv"
 	return d.createTransport(options)
 }
 
-func (d *Device) createTransport(options TransportOptions) *Transport {
+func (d *Device) createTransport(options DeviceCreateTransportOptions) *Transport {
 	options.extendedRtpCapabilities = d.extendedRtpCapabilities
-	transport := NewTransport(options)
+	transport := newTransport(options)
 
 	transport.SafeEmit("newtransport", transport)
 

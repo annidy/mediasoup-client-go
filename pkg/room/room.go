@@ -17,11 +17,12 @@ import (
 	"github.com/jiyeyuran/go-protoo"
 	"github.com/jiyeyuran/go-protoo/transport"
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/jiyeyuran/mediasoup-go/h264"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/json-iterator/go/extra"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
-	"github.com/pion/webrtc/v4/pkg/media/ivfreader"
+	"github.com/pion/webrtc/v4/pkg/media/h264reader"
 	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 	"github.com/rs/zerolog/log"
 )
@@ -58,7 +59,7 @@ func NewRoomClient() *RoomClient {
 
 const (
 	audioFileName   = "output.ogg"
-	videoFileName   = "output.ivf"
+	videoFileName   = "output.h264"
 	oggPageDuration = time.Millisecond * 20
 )
 
@@ -183,28 +184,7 @@ func (r *RoomClient) EnableLocalFile() {
 	}
 
 	if haveVideoFile {
-		file, openErr := os.Open(videoFileName)
-		if openErr != nil {
-			panic(openErr)
-		}
-
-		_, header, openErr := ivfreader.NewWith(file)
-		if openErr != nil {
-			panic(openErr)
-		}
-
-		// Determine video codec
-		var trackCodec string
-		switch header.FourCC {
-		case "AV01":
-			trackCodec = webrtc.MimeTypeAV1
-		case "VP90":
-			trackCodec = webrtc.MimeTypeVP9
-		case "VP80":
-			trackCodec = webrtc.MimeTypeVP8
-		default:
-			panic(fmt.Sprintf("Unable to handle FourCC %s", header.FourCC))
-		}
+		var trackCodec string = webrtc.MimeTypeH264
 
 		// Create a video track
 		videoTrack, videoTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: trackCodec}, "video", "pion")
@@ -215,7 +195,18 @@ func (r *RoomClient) EnableLocalFile() {
 		_ = r.sendTransport.Produce(client.TransportProduceOptions{
 			Track: videoTrack,
 			Codec: &mediasoup.RtpCodecParameters{
-				MimeType: trackCodec,
+				MimeType:  trackCodec,
+				ClockRate: 90000,
+				Parameters: mediasoup.RtpCodecSpecificParameters{
+					RtpParameter: h264.RtpParameter{
+						ProfileLevelId: "42e01f",
+						PacketizationMode: func() *uint8 {
+							v := uint8(1)
+							return &v
+						}(),
+						LevelAsymmetryAllowed: uint8(1),
+					},
+				},
 			},
 			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
 				// Read incoming RTCP packets
@@ -234,41 +225,31 @@ func (r *RoomClient) EnableLocalFile() {
 		})
 
 		go func() {
-			// Open a IVF file and start reading using our IVFReader
-			file, ivfErr := os.Open(videoFileName)
-			if ivfErr != nil {
-				panic(ivfErr)
+			file, h264Err := os.Open(videoFileName)
+			if h264Err != nil {
+				panic(h264Err)
 			}
 
-			ivf, header, ivfErr := ivfreader.NewWith(file)
-			if ivfErr != nil {
-				panic(ivfErr)
+			h264, h264Err := h264reader.NewReader(file)
+			if h264Err != nil {
+				panic(h264Err)
 			}
 
-			// Wait for connection established
-			// <-iceConnectedCtx.Done()
-
-			// Send our video file frame at a time. Pace our sending so we send it at the same speed it should be played back as.
-			// This isn't required since the video is timestamped, but we will such much higher loss if we send all at once.
-			//
-			// It is important to use a time.Ticker instead of time.Sleep because
-			// * avoids accumulating skew, just calling time.Sleep didn't compensate for the time spent parsing the data
-			// * works around latency issues with Sleep (see https://github.com/golang/go/issues/44343)
-			ticker := time.NewTicker(time.Millisecond * time.Duration((float32(header.TimebaseNumerator)/float32(header.TimebaseDenominator))*1000))
+			ticker := time.NewTicker(time.Millisecond * time.Duration(1000/24))
 			defer ticker.Stop()
 			for ; true; <-ticker.C {
-				frame, _, ivfErr := ivf.ParseNextFrame()
-				if errors.Is(ivfErr, io.EOF) {
+				nal, h264Err := h264.NextNAL()
+				if errors.Is(h264Err, io.EOF) {
 					fmt.Printf("All video frames parsed and sent")
 					os.Exit(0)
 				}
 
-				if ivfErr != nil {
-					panic(ivfErr)
+				if h264Err != nil {
+					panic(h264Err)
 				}
 
-				if ivfErr = videoTrack.WriteSample(media.Sample{Data: frame, Duration: time.Second}); ivfErr != nil {
-					panic(ivfErr)
+				if h264Err = videoTrack.WriteSample(media.Sample{Data: nal.Data, Duration: time.Second}); h264Err != nil {
+					panic(h264Err)
 				}
 			}
 		}()
@@ -364,7 +345,7 @@ func (r *RoomClient) DisableWebcam() {
 }
 
 func (r *RoomClient) enableChatDataProducer() {
-	r.chatDataProducer = r.sendTransport.ProduceData(client.DataProducerOptions{
+	r.chatDataProducer = r.sendTransport.ProduceData(client.TransportProduceDataOptions{
 		Ordered:        false,
 		MaxRetransmits: 1,
 		Label:          "chat",

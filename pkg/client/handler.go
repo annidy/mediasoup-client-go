@@ -135,7 +135,7 @@ type HandlerSendOptions struct {
 	onRtpSender  func(*webrtc.RTPSender)
 }
 
-func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParameters *RtpParameters, rtpSender RTCRtpSender) {
+func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParameters *RtpParameters, rtpSender *webrtc.RTPSender) {
 	track, codecOptions, codec, onRtpSender := options.track, options.codecOptions, options.codec, options.onRtpSender
 
 	var sendingRtpParameters, sendingRemoteRtpParameters RtpParameters

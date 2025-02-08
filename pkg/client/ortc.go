@@ -23,11 +23,6 @@ var DYNAMIC_PAYLOAD_TYPES = [...]byte{
 	57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71,
 }
 
-type matchOptions struct {
-	strict bool
-	modify bool
-}
-
 type RtpMapping struct {
 	Codecs    []RtpMappingCodec    `json:"codecs,omitempty"`
 	Encodings []RtpMappingEncoding `json:"encodings,omitempty"`

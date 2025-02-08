@@ -101,7 +101,15 @@ func (t *Transport) Produce(options TransportProduceOptions) *Producer {
 	return producer
 }
 
-func (t *Transport) ProduceData(options DataProducerOptions) *DataProducer {
+type TransportProduceDataOptions struct {
+	Ordered        bool
+	MaxRetransmits int
+	Label          string
+	Priority       string
+	AppData        any
+}
+
+func (t *Transport) ProduceData(options TransportProduceDataOptions) *DataProducer {
 	return nil
 }
 

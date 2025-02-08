@@ -2,7 +2,6 @@ package client
 
 import (
 	"github.com/jiyeyuran/mediasoup-go"
-	"github.com/pion/webrtc/v4"
 )
 
 type IceParameters = mediasoup.IceParameters
@@ -64,9 +63,6 @@ func (r RtpCodec) Parameters() RtpCodecSpecificParameters {
 	return r.p.Parameters
 }
 
-type RTCRtpSender interface {
-}
-
 type RtpCapabilitiesEx struct {
 	Codecs           []*RtpCodecCapabilityEx `json:"codecs,omitempty"`
 	HeaderExtensions []*RtpHeaderExtensionEx `json:"headerExtensions,omitempty"`
@@ -86,24 +82,6 @@ type RtpHeaderExtensionEx struct {
 	SendId  int
 	RecvId  int
 	Encrypt bool
-}
-
-type WebrtcTransportInfo struct {
-	Id               string                      `json:"id,omitempty"`
-	DtlsParameters   *mediasoup.DtlsParameters   `json:"dtlsParameters,omitempty"`
-	SctpCapabilities *mediasoup.SctpCapabilities `json:"sctpCapabilities,omitempty"`
-}
-
-type DataProducerOptions struct {
-	Ordered        bool
-	MaxRetransmits int
-	Label          string
-	Priority       string
-	AppData        any
-}
-
-type TrackProducerOptions struct {
-	Track *webrtc.TrackLocal
 }
 
 type DeviceInfo struct {

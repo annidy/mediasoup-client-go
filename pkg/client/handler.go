@@ -1,7 +1,9 @@
 package client
 
 import (
-	"github.com/annidy/mediasoup-client/internal/util"
+	"fmt"
+
+	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/pion/webrtc/v4"
@@ -33,6 +35,7 @@ type PionHandler struct {
 	sendingRemoteRtpParametersByKind map[string]*RtpParameters
 	pc                               *webrtc.PeerConnection
 	mapMidTransceiver                map[string]*webrtc.RTPTransceiver
+	transportReady                   bool
 }
 
 var _ Handler = (*PionHandler)(nil)
@@ -136,15 +139,16 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 	track, codecOptions, codec, onRtpSender := options.track, options.codecOptions, options.codec, options.onRtpSender
 
 	var sendingRtpParameters, sendingRemoteRtpParameters RtpParameters
-	util.Clone(h.sendingRtpParametersByKind[track.Kind().String()], &sendingRtpParameters)
+	utils.Clone(h.sendingRtpParametersByKind[track.Kind().String()], &sendingRtpParameters)
 
 	sendingRtpParameters.Codecs = ortc.reduceCodecs(sendingRtpParameters.Codecs, codec)
 
-	util.Clone(h.sendingRemoteRtpParametersByKind[track.Kind().String()], &sendingRemoteRtpParameters)
+	utils.Clone(h.sendingRemoteRtpParametersByKind[track.Kind().String()], &sendingRemoteRtpParameters)
 	sendingRemoteRtpParameters.Codecs = ortc.reduceCodecs(sendingRemoteRtpParameters.Codecs, codec)
 
 	mediaSectionIdx, mediaSectionReuseMid := h.remoteSdp.getNextMediaSectionIdx()
 
+	// TODO: 获取Media过来的encodings
 	transceiver, err := h.pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
 		Direction: webrtc.RTPTransceiverDirectionSendonly,
 	})
@@ -161,7 +165,11 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 	}
 	localSdpObject := sdp.Parse(offer.SDP)
 
-	// TODO: setupTransport
+	fmt.Println(offer.SDP)
+
+	if !h.transportReady {
+		h.setupTransport(mediasoup.DtlsRole_Client, localSdpObject)
+	}
 
 	h.pc.SetLocalDescription(offer)
 
@@ -171,12 +179,14 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 	// Set MID
 	sendingRtpParameters.Mid = localId
 
-	// Why reparse?
-	localSdpObject = sdp.Parse(h.pc.LocalDescription().SDP)
+	// Why reparse? This is wrong.
+	// localSdpObject = sdp.Parse(h.pc.LocalDescription().SDP)
 
 	offerMediaObject := localSdpObject.Media[mediaSectionIdx]
 
 	sendingRtpParameters.Rtcp.Cname = sdp.GetCname(offerMediaObject)
+
+	// Set RTP encodings by parsing the SDP offer if no encodings are given.
 	sendingRtpParameters.Encodings = sdp.GetRtpEncodings(offerMediaObject)
 
 	h.remoteSdp.send(SendTransportOptions{
@@ -204,4 +214,20 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 func (h *PionHandler) restartIce(iceParameters *mediasoup.IceParameters) {
 	// Provide the remote SDP handler with new remote ICE parameters.
 	h.remoteSdp.updateIceParameters(iceParameters)
+}
+
+func (h *PionHandler) setupTransport(localDtlsRole mediasoup.DtlsRole, localSdpObject sdp.Sdp) {
+
+	dtlsParameters := extractDtlsParameters(localSdpObject)
+	dtlsParameters.Role = localDtlsRole
+
+	if localDtlsRole == mediasoup.DtlsRole_Client {
+		h.remoteSdp.updateDtlsRole(mediasoup.DtlsRole_Server)
+	} else {
+		h.remoteSdp.updateDtlsRole(mediasoup.DtlsRole_Client)
+	}
+
+	h.SafeEmit("@connect", dtlsParameters)
+
+	h.transportReady = true
 }

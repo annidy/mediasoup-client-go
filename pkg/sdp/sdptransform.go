@@ -43,6 +43,98 @@ func ParseParams(params string) (spdParamsObject SpdParams) {
 	return
 }
 
+type MeidaCandidates struct {
+	Component  int    `json:"component"`
+	Foundation string `json:"foundation"`
+	Generation int    `json:"generation,omitempty"`
+	IP         string `json:"ip"`
+	Port       int    `json:"port"`
+	Priority   int    `json:"priority"`
+	Transport  string `json:"transport"`
+	Type       string `json:"type"`
+	Tcptype    string `json:"tcptype,omitempty"`
+	Raddr      string `json:"raddr,omitempty"`
+	Rport      int    `json:"rport,omitempty"`
+}
+
+type MediaObject struct {
+	Candidates []MeidaCandidates `json:"candidates,omitempty"`
+	Connection struct {
+		IP      string `json:"ip"`
+		Version int    `json:"version"`
+	} `json:"connection"`
+	Crypto []struct {
+		Config string `json:"config"`
+		ID     int    `json:"id"`
+		Suite  string `json:"suite"`
+	} `json:"crypto,omitempty"`
+	Direction string `json:"direction,omitempty"`
+	Fmtp      []struct {
+		Config  string `json:"config,omitempty"`
+		Payload int    `json:"payload,omitempty"`
+	} `json:"fmtp,omitempty"`
+	IceOptions      string `json:"iceOptions,omitempty"`
+	EndOfCandidates string `json:"end-of-candidates,omitempty"`
+	IcePwd          string `json:"icePwd,omitempty"`
+	IceUfrag        string `json:"iceUfrag,omitempty"`
+	Maxptime        int    `json:"maxptime,omitempty"`
+	Mid             string `json:"mid,omitempty"`
+	Payloads        string `json:"payloads,omitempty"`
+	Port            int    `json:"port,omitempty"`
+	Protocol        string `json:"protocol,omitempty"`
+	Ptime           int    `json:"ptime,omitempty"`
+	Rtcp            struct {
+		Address string `json:"address,omitempty"`
+		IPVer   int    `json:"ipVer,omitempty"`
+		NetType string `json:"netType,omitempty"`
+		Port    int    `json:"port,omitempty"`
+	} `json:"rtcp,omitempty"`
+	RtcpMux   string `json:"rtcpMux,omitempty"`
+	RtcpRsize string `json:"rtcpRsize,omitempty"`
+	Rtp       []struct {
+		Codec    string `json:"codec,omitempty"`
+		Payload  int    `json:"payload,omitempty"`
+		Rate     int    `json:"rate,omitempty"`
+		Encoding string `json:"encoding,omitempty"`
+	} `json:"rtp,omitempty"`
+	Type   string `json:"type,omitempty"`
+	RtcpFb []struct {
+		Payload string `json:"payload,omitempty"`
+		Type    string `json:"type,omitempty"`
+		Subtype string `json:"subtype,omitempty"`
+	} `json:"rtcpFb,omitempty"`
+	RtcpFbTrrInt []struct {
+		Payload string `json:"payload,omitempty"`
+		Value   int    `json:"value,omitempty"`
+	} `json:"rtcpFbTrrInt,omitempty"`
+	Ssrcs []struct {
+		Attribute string `json:"attribute,omitempty"`
+		ID        int    `json:"id,omitempty"`
+		Value     string `json:"value,omitempty"`
+	} `json:"ssrcs,omitempty"`
+	Framerate float64 `json:"framerate,omitempty"`
+	Ext       []struct {
+		EncryptUri string `json:"encrypt-uri,omitempty"`
+		Uri        string `json:"uri,omitempty"`
+		Value      int    `json:"value,omitempty"`
+	} `json:"ext,omitempty"`
+	Bandwidth []struct {
+		Limit int    `json:"limit,omitempty"`
+		Type  string `json:"type,omitempty"`
+	} `json:"bandwidth,omitempty"`
+	Fingerprint struct {
+		Hash string `json:"hash,omitempty"`
+		Type string `json:"type,omitempty"`
+	} `json:"fingerprint,omitempty"`
+	Sctpmap struct {
+		App            string `json:"app,omitempty"`
+		MaxMessageSize int    `json:"maxMessageSize,omitempty"`
+		SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
+	} `json:"sctpmap,omitempty"`
+	Setup            string `json:"setup,omitempty"`
+	ExtmapAllowMixed string `json:"extmapAllowMixed,omitempty"`
+}
+
 type Sdp struct {
 	Groups []struct {
 		Mids string `json:"mids"`
@@ -56,95 +148,9 @@ type Sdp struct {
 		Hash string `json:"hash,omitempty"`
 		Type string `json:"type,omitempty"`
 	} `json:"fingerprint,omitempty"`
-	IcePwd   string `json:"icePwd,omitempty"`
-	IceUfrag string `json:"iceUfrag,omitempty"`
-	Media    []struct {
-		Candidates []struct {
-			Component  int    `json:"component"`
-			Foundation string `json:"foundation"`
-			Generation int    `json:"generation,omitempty"`
-			IP         string `json:"ip"`
-			Port       int    `json:"port"`
-			Priority   int    `json:"priority"`
-			Transport  string `json:"transport"`
-			Type       string `json:"type"`
-			Tcptype    string `json:"tcptype,omitempty"`
-			Raddr      string `json:"raddr,omitempty"`
-			Rport      int    `json:"rport,omitempty"`
-		} `json:"candidates,omitempty"`
-		Connection struct {
-			IP      string `json:"ip"`
-			Version int    `json:"version"`
-		} `json:"connection"`
-		Crypto []struct {
-			Config string `json:"config"`
-			ID     int    `json:"id"`
-			Suite  string `json:"suite"`
-		} `json:"crypto,omitempty"`
-		Direction string `json:"direction,omitempty"`
-		Fmtp      []struct {
-			Config  string `json:"config,omitempty"`
-			Payload int    `json:"payload,omitempty"`
-		} `json:"fmtp,omitempty"`
-		IceOptions      string `json:"iceOptions,omitempty"`
-		EndOfCandidates string `json:"end-of-candidates,omitempty"`
-		IcePwd          string `json:"icePwd,omitempty"`
-		IceUfrag        string `json:"iceUfrag,omitempty"`
-		Maxptime        int    `json:"maxptime,omitempty"`
-		Mid             string `json:"mid,omitempty"`
-		Payloads        string `json:"payloads,omitempty"`
-		Port            int    `json:"port,omitempty"`
-		Protocol        string `json:"protocol,omitempty"`
-		Ptime           int    `json:"ptime,omitempty"`
-		Rtcp            struct {
-			Address string `json:"address,omitempty"`
-			IPVer   int    `json:"ipVer,omitempty"`
-			NetType string `json:"netType,omitempty"`
-			Port    int    `json:"port,omitempty"`
-		} `json:"rtcp,omitempty"`
-		RtcpMux string `json:"rtcpMux,omitempty"`
-		Rtp     []struct {
-			Codec    string `json:"codec,omitempty"`
-			Payload  int    `json:"payload,omitempty"`
-			Rate     int    `json:"rate,omitempty"`
-			Encoding string `json:"encoding,omitempty"`
-		} `json:"rtp,omitempty"`
-		Type   string `json:"type,omitempty"`
-		RtcpFb []struct {
-			Payload string `json:"payload,omitempty"`
-			Type    string `json:"type,omitempty"`
-			Subtype string `json:"subtype,omitempty"`
-		} `json:"rtcpFb,omitempty"`
-		RtcpFbTrrInt []struct {
-			Payload string `json:"payload,omitempty"`
-			Value   int    `json:"value,omitempty"`
-		} `json:"rtcpFbTrrInt,omitempty"`
-		Ssrcs []struct {
-			Attribute string `json:"attribute,omitempty"`
-			ID        int    `json:"id,omitempty"`
-			Value     string `json:"value,omitempty"`
-		} `json:"ssrcs,omitempty"`
-		Framerate float64 `json:"framerate,omitempty"`
-		Ext       []struct {
-			EncryptUri string `json:"encrypt-uri,omitempty"`
-			Uri        string `json:"uri,omitempty"`
-			Value      int    `json:"value,omitempty"`
-		} `json:"ext,omitempty"`
-		Bandwidth []struct {
-			Limit int    `json:"limit,omitempty"`
-			Type  string `json:"type,omitempty"`
-		} `json:"bandwidth,omitempty"`
-		Fingerprint struct {
-			Hash string `json:"hash,omitempty"`
-			Type string `json:"type,omitempty"`
-		} `json:"fingerprint,omitempty"`
-		Sctpmap struct {
-			App            string `json:"app,omitempty"`
-			MaxMessageSize int    `json:"maxMessageSize,omitempty"`
-			SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
-		} `json:"sctpmap,omitempty"`
-		Setup string `json:"setup,omitempty"`
-	} `json:"media,omitempty"`
+	IcePwd       string        `json:"icePwd,omitempty"`
+	IceUfrag     string        `json:"iceUfrag,omitempty"`
+	Media        []MediaObject `json:"media,omitempty"`
 	MsidSemantic struct {
 		Semantics string `json:"semantics,omitempty"`
 		Token     string `json:"token,omitempty"`

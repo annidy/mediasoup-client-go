@@ -3,7 +3,7 @@ package main
 import (
 	"net/url"
 
-	"github.com/annidy/mediasoup-client/internal/util"
+	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/room"
 	"github.com/spf13/viper"
 )
@@ -37,7 +37,7 @@ func main() {
 	u := url.URL{Scheme: config.Server.Scheme, Host: config.Server.Host, Path: config.Server.Path}
 	q := u.Query()
 	q.Set("roomId", config.Room.RoomId)
-	q.Set("peerId", util.RandomAlpha(6))
+	q.Set("peerId", utils.RandomAlpha(6))
 	u.RawQuery = q.Encode()
 
 	roomClient := room.NewRoomClient()

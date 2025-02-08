@@ -3,7 +3,7 @@ package client
 import (
 	"sync/atomic"
 
-	"github.com/annidy/mediasoup-client/internal/util"
+	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/rs/zerolog/log"
 )
@@ -38,14 +38,14 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 		return
 	}
 	var clonedRouterRtpCapabilities mediasoup.RtpCapabilities
-	util.Clone(routerRtpCapabilities, &clonedRouterRtpCapabilities)
+	utils.Clone(routerRtpCapabilities, &clonedRouterRtpCapabilities)
 	if err := ortc.validateRtpCapabilities(&clonedRouterRtpCapabilities); err != nil {
 		panic(err)
 	}
 
 	nativeRtpCapabilities := d.handler.getNativeRouterRtpCapabilities()
 	var clonedNativeRtpCapabilities mediasoup.RtpCapabilities
-	util.Clone(nativeRtpCapabilities, &clonedNativeRtpCapabilities)
+	utils.Clone(nativeRtpCapabilities, &clonedNativeRtpCapabilities)
 	if err := ortc.validateRtpCapabilities(&clonedNativeRtpCapabilities); err != nil {
 		panic(err)
 	}

@@ -103,6 +103,35 @@ func extractRtpCapabilities(sdpObject sdp.Sdp) (rtpCapabilities RtpCapabilities)
 	}
 }
 
+func extractDtlsParameters(sdpObject sdp.Sdp) *mediasoup.DtlsParameters {
+	var setup string
+	fingerprint := sdpObject.Fingerprint
+	for _, media := range sdpObject.Media {
+		if media.Port != 0 {
+			setup = media.Setup
+			break
+		}
+	}
+	role := mediasoup.DtlsRole_Auto
+	switch setup {
+	case "active":
+		role = mediasoup.DtlsRole_Client
+	case "passive":
+		role = mediasoup.DtlsRole_Server
+	case "actpass":
+		role = mediasoup.DtlsRole_Auto
+	}
+	return &mediasoup.DtlsParameters{
+		Role: role,
+		Fingerprints: []mediasoup.DtlsFingerprint{
+			{
+				Algorithm: fingerprint.Type,
+				Value:     fingerprint.Hash,
+			},
+		},
+	}
+}
+
 func isRtxCodec(codec RtpCodec) bool {
 	return strings.HasSuffix(codec.MimeType(), "/rtx")
 }

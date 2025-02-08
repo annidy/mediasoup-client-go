@@ -3,6 +3,7 @@ package client
 import (
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/pion/webrtc/v4"
+	"github.com/rs/zerolog/log"
 )
 
 type Transport struct {
@@ -17,8 +18,9 @@ type Transport struct {
 	extendedRtpCapabilities *RtpCapabilitiesEx
 	closed                  bool
 
-	handler   *PionHandler
-	producers map[string]*Producer
+	handler        *PionHandler
+	producers      map[string]*Producer
+	producerIdChan chan string
 }
 
 type DeviceCreateTransportOptions struct {
@@ -39,6 +41,7 @@ func newTransport(options DeviceCreateTransportOptions) *Transport {
 		extendedRtpCapabilities: options.extendedRtpCapabilities,
 		handler:                 NewPionHandler(),
 		producers:               make(map[string]*Producer),
+		producerIdChan:          make(chan string, 1), // 发消息是阻塞的，这里必现带缓冲
 	}
 
 	transport.handler.run(HandlerRunOptions{
@@ -60,10 +63,11 @@ type TransportProduceOptions struct {
 	codecOptions []*mediasoup.RtpCodecParameters
 	Codec        *mediasoup.RtpCodecParameters
 	OnRtpSender  func(*webrtc.RTPSender)
+	AppData      any
 }
 
 func (t *Transport) Produce(options TransportProduceOptions) *Producer {
-	track, codecOptions, codec, onRtpSender := options.Track, options.codecOptions, options.Codec, options.OnRtpSender
+	track, codecOptions, codec, onRtpSender, appData := options.Track, options.codecOptions, options.Codec, options.OnRtpSender, options.AppData
 
 	localId, rtpParameters, _ := t.handler.send(HandlerSendOptions{
 		track:        track,
@@ -75,10 +79,12 @@ func (t *Transport) Produce(options TransportProduceOptions) *Producer {
 	// This will fill rtpParameters's missing fields with default values.
 	ortc.validateRtpParameters(rtpParameters)
 
-	t.SafeEmit("produce", track.Kind().String(), rtpParameters)
+	if !t.Emit("produce", MediaKind(track.Kind().String()), rtpParameters, appData) {
+		log.Error().Msg("produce signaling failed")
+		return nil
+	}
 
-	// TODO: id from server
-	id := ""
+	id := <-t.producerIdChan
 
 	producer := NewProducer(ProducerOptions{
 		Id:            id,
@@ -165,4 +171,8 @@ func (t *Transport) handleProducer(producer *Producer) {
 	producer.On("@getstats", func() {
 		// TODO: handler getStats
 	})
+}
+
+func (t *Transport) ProducerIdChan() chan<- string {
+	return t.producerIdChan
 }

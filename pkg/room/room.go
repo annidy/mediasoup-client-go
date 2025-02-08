@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/annidy/mediasoup-client/internal/util"
+	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/client"
 	"github.com/annidy/mediasoup-client/pkg/proto"
 
@@ -44,13 +44,15 @@ type RoomClient struct {
 	micProducer      *client.Producer
 	webcamProducer   *client.Producer
 	chatDataProducer *client.DataProducer
+	displayName      string
 }
 
 func NewRoomClient() *RoomClient {
 	return &RoomClient{
-		produce: true,
-		consume: true,
-		peers:   make(map[string]*proto.PeerData),
+		produce:     true,
+		consume:     true,
+		displayName: utils.RandomAlpha(8),
+		peers:       make(map[string]*proto.PeerData),
 	}
 }
 
@@ -228,6 +230,7 @@ func (r *RoomClient) EnableLocalFile() {
 					}
 				}()
 			},
+			AppData: map[string]any{},
 		})
 
 		go func() {
@@ -296,6 +299,7 @@ func (r *RoomClient) EnableLocalFile() {
 					}
 				}()
 			},
+			AppData: map[string]any{},
 		})
 
 		go func() {
@@ -444,12 +448,21 @@ func (r *RoomClient) joinRoom() {
 			})
 		})
 		r.sendTransport.On("produce", func(kind client.MediaKind, rtpParameters *client.RtpParameters, appData any) {
-			r.peer.Request("produce", proto.WebrtcTransportProducerRequest{
+			type ProduceResponse struct {
+				Id string
+			}
+			var rsp ProduceResponse
+
+			if err := r.peer.RequestData("produce", proto.WebrtcTransportProducerRequest{
 				TransportId:   transportOptions.Id,
 				Kind:          kind,
 				RtpParameters: rtpParameters,
 				AppData:       appData,
-			})
+			}, &rsp); err != nil {
+				log.Err(err).Msg("produce")
+				return
+			}
+			r.sendTransport.ProducerIdChan() <- rsp.Id
 		})
 		r.sendTransport.On("producedata", func(sctpStreamParameters *client.SctpStreamParameters, label string, protocol string, appData any) {
 			r.peer.Request("produceData", proto.WebrtcTransportProducerDataRequest{
@@ -491,7 +504,7 @@ func (r *RoomClient) joinRoom() {
 	}
 	var peers Peers
 	if err := r.peer.RequestData("join", proto.JoinRequest{
-		DisplayName:      util.RandomAlpha(8),
+		DisplayName:      r.displayName,
 		Device:           r.device.DeviceInfo(),
 		RtpCapabilities:  r.device.RtpCapabilities(),
 		SctpCapabilities: r.device.SctpCapabilities(),

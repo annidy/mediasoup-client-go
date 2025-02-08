@@ -1,36 +1,25 @@
 package sdp
 
 import (
-	"encoding/json"
-
-	"github.com/Jeffail/gabs"
 	"github.com/jiyeyuran/mediasoup-go"
 )
 
-func GetCname(offerMediaObject interface{}) string {
-	j, _ := json.Marshal(offerMediaObject)
-	jsonMedia, _ := gabs.ParseJSON(j)
-	if children, err := jsonMedia.S("ssrcs").Children(); err == nil {
-		for _, ssrc := range children {
-			if ssrc.Path("attribute").Data().(string) == "cname" {
-				return ssrc.Path("value").Data().(string)
-			}
+func GetCname(offerMediaObject MediaObject) string {
+	for _, ssrc := range offerMediaObject.Ssrcs {
+		if ssrc.Attribute == "cname" {
+			return ssrc.Value
 		}
 	}
 	return ""
 }
 
-func GetRtpEncodings(offerMediaObject interface{}) []mediasoup.RtpEncodingParameters {
-	j, _ := json.Marshal(offerMediaObject)
-	jsonMedia, _ := gabs.ParseJSON(j)
+func GetRtpEncodings(offerMediaObject MediaObject) []mediasoup.RtpEncodingParameters {
 
 	ssrcs := make(map[uint32]bool, 0)
-	if children, err := jsonMedia.S("ssrcs").Children(); err == nil {
-		for _, ssrc := range children {
-			var id float64 = ssrc.Path("id").Data().(float64)
-			ssrcs[uint32(id)] = true
-		}
+	for _, ssrc := range offerMediaObject.Ssrcs {
+		ssrcs[uint32(ssrc.ID)] = true
 	}
+
 	if len(ssrcs) == 0 {
 		panic("no a=ssrc line found")
 	}

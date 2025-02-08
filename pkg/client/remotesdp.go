@@ -13,7 +13,7 @@ type RemoteSdp struct {
 	// TODO: palin rtp parameters
 	IsPlanB bool
 	// MediaSection sdp.MediaSection
-	MidToIndex map[string]int
+	midToIndex map[string]int
 	firstMid   string
 	sdpObject  sdp.Sdp
 
@@ -46,6 +46,7 @@ func NewRemoteSdp(iceParameters *IceParameters, iceCandidates []*IceCandidate, d
 			},
 			Name: "-",
 		},
+		midToIndex: make(map[string]int),
 	}
 	if iceParameters != nil {
 		if iceParameters.IceLite {
@@ -106,7 +107,7 @@ func (rdp *RemoteSdp) updateIceParameters(iceParameters *mediasoup.IceParameters
 }
 
 type SendTransportOptions struct {
-	offerMediaObject    interface{}
+	offerMediaObject    sdp.MediaObject
 	reuseMid            string
 	offerRtpParameters  mediasoup.RtpParameters
 	answerRtpParameters mediasoup.RtpParameters
@@ -115,11 +116,86 @@ type SendTransportOptions struct {
 }
 
 func (rdp *RemoteSdp) send(options SendTransportOptions) {
+	offerMediaObject, answerRtpParameters, codecOptions, reuseMid, extmapAllowMixed := options.offerMediaObject, options.answerRtpParameters, options.codecOptions, options.reuseMid, options.extmapAllowMixed
+	mediaSection := sdp.NewAnswerMediaSection(sdp.AnswerMediaSectionOptions{
+		MediaSectionOptions: sdp.MediaSectionOptions{
+			IceParameters:  rdp.iceParameters,
+			IceCandidates:  rdp.iceCandidates,
+			DtlsParameters: rdp.dtlsParameters,
+			PlanB:          rdp.IsPlanB,
+		},
+		OfferMediaObject:    offerMediaObject,
+		AnswerRtpParameters: answerRtpParameters,
+		CodecOptions:        codecOptions,
+		ExtmapAllowMixed:    extmapAllowMixed,
+	})
 
+	// Unified-Plan with closed media section replacement.
+	if reuseMid != "" {
+		rdp.replaceMediaSection(&mediaSection.MediaSection, reuseMid)
+	} else if _, exist := rdp.midToIndex[mediaSection.Mid()]; !exist {
+		// Unified-Plan or Plan-B with different media kind.
+		rdp.addMediaSection(&mediaSection.MediaSection)
+	} else {
+		// Plan-B with same media kind.
+		rdp.replaceMediaSection(&mediaSection.MediaSection, "")
+	}
 }
 
 func (rdp *RemoteSdp) getSdp() string {
 	rdp.sdpObject.Origin.SessionVersion++
 
 	return sdp.Write(rdp.sdpObject)
+}
+
+func (rdp *RemoteSdp) addMediaSection(newMediaSection *sdp.MediaSection) {
+	if rdp.firstMid == "" {
+		rdp.firstMid = newMediaSection.Mid()
+	}
+	rdp.mediaSections = append(rdp.mediaSections, newMediaSection)
+
+	rdp.midToIndex[newMediaSection.Mid()] = len(rdp.mediaSections) - 1
+
+	rdp.sdpObject.Media = append(rdp.sdpObject.Media, newMediaSection.MediaObject())
+
+	rdp.regenerateBundleMids()
+}
+
+func (rdp *RemoteSdp) replaceMediaSection(newMediaSection *sdp.MediaSection, reuseMid string) {
+	if reuseMid != "" {
+		// Get the index of the old media section.
+		idx, exist := rdp.midToIndex[reuseMid]
+		if !exist {
+			panic("no media section found for reuseMid")
+		}
+		oldMediaSection := rdp.mediaSections[idx]
+		// Replace the media section.
+		rdp.mediaSections[idx] = newMediaSection
+		delete(rdp.midToIndex, oldMediaSection.Mid())
+		rdp.midToIndex[newMediaSection.Mid()] = idx
+
+		rdp.sdpObject.Media[idx] = newMediaSection.MediaObject()
+	} else {
+		// Get the index of the old media section.
+		idx, exist := rdp.midToIndex[newMediaSection.Mid()]
+		if !exist {
+			panic("no media section found for newMediaSection.Mid()")
+		}
+		// Replace the media section.
+		rdp.mediaSections[idx] = newMediaSection
+
+		rdp.sdpObject.Media[idx] = newMediaSection.MediaObject()
+	}
+
+}
+
+func (rdp *RemoteSdp) regenerateBundleMids() {
+}
+
+func (rdp *RemoteSdp) updateDtlsRole(role mediasoup.DtlsRole) {
+	rdp.dtlsParameters.Role = role
+
+	for _, mediaSection := range rdp.mediaSections {
+		mediaSection.SetDtlsRole(role)
+	}
 }

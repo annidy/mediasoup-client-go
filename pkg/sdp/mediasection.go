@@ -1,6 +1,15 @@
 package sdp
 
-import "github.com/jiyeyuran/mediasoup-go"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/annidy/mediasoup-client/internal/utils"
+	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/rs/zerolog/log"
+	"github.com/samber/lo"
+)
 
 type MediaSection struct {
 	closed      bool
@@ -9,105 +18,15 @@ type MediaSection struct {
 	planB       bool
 }
 
-type MeidaCandidates struct {
-	Component  int    `json:"component"`
-	Foundation string `json:"foundation"`
-	Generation int    `json:"generation,omitempty"`
-	IP         string `json:"ip"`
-	Port       int    `json:"port"`
-	Priority   int    `json:"priority"`
-	Transport  string `json:"transport"`
-	Type       string `json:"type"`
-	Tcptype    string `json:"tcptype,omitempty"`
-	Raddr      string `json:"raddr,omitempty"`
-	Rport      int    `json:"rport,omitempty"`
-}
-
-type MediaObject struct {
-	Candidates []MeidaCandidates `json:"candidates,omitempty"`
-	Connection struct {
-		IP      string `json:"ip"`
-		Version int    `json:"version"`
-	} `json:"connection"`
-	Crypto []struct {
-		Config string `json:"config"`
-		ID     int    `json:"id"`
-		Suite  string `json:"suite"`
-	} `json:"crypto,omitempty"`
-	Direction string `json:"direction,omitempty"`
-	Fmtp      []struct {
-		Config  string `json:"config,omitempty"`
-		Payload int    `json:"payload,omitempty"`
-	} `json:"fmtp,omitempty"`
-	IceOptions      string `json:"iceOptions,omitempty"`
-	EndOfCandidates string `json:"end-of-candidates,omitempty"`
-	IcePwd          string `json:"icePwd,omitempty"`
-	IceUfrag        string `json:"iceUfrag,omitempty"`
-	Maxptime        int    `json:"maxptime,omitempty"`
-	Mid             string `json:"mid,omitempty"`
-	Payloads        string `json:"payloads,omitempty"`
-	Port            int    `json:"port,omitempty"`
-	Protocol        string `json:"protocol,omitempty"`
-	Ptime           int    `json:"ptime,omitempty"`
-	Rtcp            struct {
-		Address string `json:"address,omitempty"`
-		IPVer   int    `json:"ipVer,omitempty"`
-		NetType string `json:"netType,omitempty"`
-		Port    int    `json:"port,omitempty"`
-	} `json:"rtcp,omitempty"`
-	RtcpMux string `json:"rtcpMux,omitempty"`
-	Rtp     []struct {
-		Codec    string `json:"codec,omitempty"`
-		Payload  int    `json:"payload,omitempty"`
-		Rate     int    `json:"rate,omitempty"`
-		Encoding string `json:"encoding,omitempty"`
-	} `json:"rtp,omitempty"`
-	Type   string `json:"type,omitempty"`
-	RtcpFb []struct {
-		Payload string `json:"payload,omitempty"`
-		Type    string `json:"type,omitempty"`
-		Subtype string `json:"subtype,omitempty"`
-	} `json:"rtcpFb,omitempty"`
-	RtcpFbTrrInt []struct {
-		Payload string `json:"payload,omitempty"`
-		Value   int    `json:"value,omitempty"`
-	} `json:"rtcpFbTrrInt,omitempty"`
-	Ssrcs []struct {
-		Attribute string `json:"attribute,omitempty"`
-		ID        int    `json:"id,omitempty"`
-		Value     string `json:"value,omitempty"`
-	} `json:"ssrcs,omitempty"`
-	Framerate float64 `json:"framerate,omitempty"`
-	Ext       []struct {
-		EncryptUri string `json:"encrypt-uri,omitempty"`
-		Uri        string `json:"uri,omitempty"`
-		Value      int    `json:"value,omitempty"`
-	} `json:"ext,omitempty"`
-	Bandwidth []struct {
-		Limit int    `json:"limit,omitempty"`
-		Type  string `json:"type,omitempty"`
-	} `json:"bandwidth,omitempty"`
-	Fingerprint struct {
-		Hash string `json:"hash,omitempty"`
-		Type string `json:"type,omitempty"`
-	} `json:"fingerprint,omitempty"`
-	Sctpmap struct {
-		App            string `json:"app,omitempty"`
-		MaxMessageSize int    `json:"maxMessageSize,omitempty"`
-		SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
-	} `json:"sctpmap,omitempty"`
-	Setup string `json:"setup,omitempty"`
-}
-
 type MediaSectionOptions struct {
-	iceParameters  *mediasoup.IceParameters
-	iceCandidates  []*mediasoup.IceCandidate
-	dtlsParameters *mediasoup.DtlsParameters
-	palnB          bool
+	IceParameters  *mediasoup.IceParameters
+	IceCandidates  []*mediasoup.IceCandidate
+	DtlsParameters *mediasoup.DtlsParameters
+	PlanB          bool
 }
 
 func NewMediaSection(options MediaSectionOptions) *MediaSection {
-	iceParameters, iceCandidates, dtlsParameters, planB := options.iceParameters, options.iceCandidates, options.dtlsParameters, options.palnB
+	iceParameters, iceCandidates, dtlsParameters, planB := options.IceParameters, options.IceCandidates, options.DtlsParameters, options.PlanB
 
 	s := MediaSection{
 		planB: planB,
@@ -166,6 +85,136 @@ func (ms *MediaSection) Mid() string {
 	return ms.mid
 }
 
+func (ms *MediaSection) MediaObject() MediaObject {
+	return ms.mediaObject
+}
+
+type AnswerMediaSectionOptions struct {
+	MediaSectionOptions
+	OfferMediaObject    MediaObject
+	AnswerRtpParameters mediasoup.RtpParameters
+	CodecOptions        []*mediasoup.RtpCodecParameters
+	ExtmapAllowMixed    bool
+}
+
 type AnswerMediaSection struct {
 	MediaSection
+	mediaObject MediaObject
+}
+
+func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSection {
+	offerMediaObject, answerRtpParameters, extmapAllowMixed := options.OfferMediaObject, options.AnswerRtpParameters, options.ExtmapAllowMixed
+	ms := &AnswerMediaSection{
+		MediaSection: *NewMediaSection(options.MediaSectionOptions),
+	}
+
+	ms.mediaObject.Mid = offerMediaObject.Mid
+	ms.mediaObject.Type = offerMediaObject.Type
+	ms.mediaObject.Protocol = offerMediaObject.Protocol
+
+	// No plainRtpParameters
+	ms.mediaObject.Connection.IP = "127.0.0.1"
+	ms.mediaObject.Connection.Version = 4
+
+	switch offerMediaObject.Type {
+	case "audio", "video":
+		ms.mediaObject.Direction = "recvonly"
+
+		for _, codec := range answerRtpParameters.Codecs {
+			rtp := struct {
+				Codec    string `json:"codec,omitempty"`
+				Payload  int    `json:"payload,omitempty"`
+				Rate     int    `json:"rate,omitempty"`
+				Encoding string `json:"encoding,omitempty"`
+			}{
+				Codec:   codec.MimeType,
+				Payload: int(codec.PayloadType),
+				Rate:    codec.ClockRate,
+			}
+			if codec.Channels > 0 {
+				// ????
+				rtp.Encoding = fmt.Sprintf("%d", codec.Channels)
+			}
+
+			ms.mediaObject.Rtp = append(ms.mediaObject.Rtp, rtp)
+
+			var codecParameters mediasoup.RtpCodecSpecificParameters
+			utils.Clone(codec.Parameters, &codecParameters)
+			var codecRtcpFeedback []mediasoup.RtcpFeedback
+			utils.Clone(codec.RtcpFeedback, &codecRtcpFeedback)
+
+			fmtp := struct {
+				Config  string `json:"config,omitempty"`
+				Payload int    `json:"payload,omitempty"`
+			}{
+				Payload: int(codec.PayloadType),
+			}
+
+			jc, _ := json.Marshal(codecParameters)
+			var jcodecParameters map[string]string
+			json.Unmarshal(jc, &jcodecParameters)
+
+			for key, value := range jcodecParameters {
+				if len(value) == 0 {
+					continue
+				}
+				if len(fmtp.Config) > 0 {
+					fmtp.Config += "; "
+				}
+				fmtp.Config = fmt.Sprintf("%s=%s", key, value)
+			}
+			if len(fmtp.Config) > 0 {
+				ms.mediaObject.Fmtp = append(ms.mediaObject.Fmtp, fmtp)
+			}
+			for _, fb := range codecRtcpFeedback {
+				rtcpFb := struct {
+					Payload string `json:"payload,omitempty"`
+					Type    string `json:"type,omitempty"`
+					Subtype string `json:"subtype,omitempty"`
+				}{
+					Payload: fmt.Sprintf("%d", codec.PayloadType),
+					Type:    fb.Type,
+					Subtype: fb.Parameter,
+				}
+				ms.mediaObject.RtcpFb = append(ms.mediaObject.RtcpFb, rtcpFb)
+			}
+		}
+
+		ms.mediaObject.Payloads = strings.Join(lo.Map(answerRtpParameters.Codecs, func(codec *mediasoup.RtpCodecParameters, index int) string {
+			return fmt.Sprintf("%d", codec.PayloadType)
+		}), " ")
+
+		for _, ext := range answerRtpParameters.HeaderExtensions {
+			var found bool
+			for _, offerExt := range offerMediaObject.Ext {
+				if offerExt.Uri == ext.Uri {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+			ms.mediaObject.Ext = append(ms.mediaObject.Ext, struct {
+				EncryptUri string `json:"encrypt-uri,omitempty"`
+				Uri        string `json:"uri,omitempty"`
+				Value      int    `json:"value,omitempty"`
+			}{
+				Value: ext.Id,
+				Uri:   ext.Uri,
+			})
+
+			if extmapAllowMixed && offerMediaObject.ExtmapAllowMixed == "extmap-allow-mixed" {
+				ms.mediaObject.ExtmapAllowMixed = "extmap-allow-mixed"
+			}
+			// TODO: Simulcast
+
+			ms.mediaObject.RtcpMux = "rtcp-mux"
+			ms.mediaObject.RtcpRsize = "rtcp-rsize"
+		}
+	default:
+		log.Warn().Msgf("ignoring media section with unsupported type: %s", offerMediaObject.Type)
+	}
+
+	return ms
 }

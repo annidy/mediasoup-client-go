@@ -1,8 +1,6 @@
 package client
 
 import (
-	"fmt"
-
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
@@ -97,9 +95,15 @@ func (h *PionHandler) getNativeSctpCapabilities() mediasoup.SctpCapabilities {
 }
 
 func (h *PionHandler) run(options HandlerRunOptions) {
-	h.direction = options.direction
+	iceParameters, iceCandidates, dtlsParameters, sctpParameters, direction := options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters, options.direction
 
-	h.remoteSdp = NewRemoteSdp(options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters)
+	h.direction = direction
+	h.remoteSdp = NewRemoteSdp(RemoteSdpOptions{
+		iceParameters:  iceParameters,
+		iceCandidates:  iceCandidates,
+		dtlsParameters: dtlsParameters,
+		sctpParameters: sctpParameters,
+	})
 	h.sendingRtpParametersByKind = map[string]*RtpParameters{
 		"audio": ortc.getSendingRtpParameters(mediasoup.MediaKind_Audio, options.extenedRtpCapabilities),
 		"video": ortc.getSendingRtpParameters(mediasoup.MediaKind_Video, options.extenedRtpCapabilities),
@@ -138,12 +142,15 @@ type HandlerSendOptions struct {
 func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParameters *RtpParameters, rtpSender *webrtc.RTPSender) {
 	track, codecOptions, codec, onRtpSender := options.track, options.codecOptions, options.codec, options.onRtpSender
 
+	trackKind := track.Kind().String()
+	log.Debug().Str("kind", trackKind).Str("track.id", track.ID()).Msg("send()")
+
 	var sendingRtpParameters, sendingRemoteRtpParameters RtpParameters
-	utils.Clone(h.sendingRtpParametersByKind[track.Kind().String()], &sendingRtpParameters)
+	utils.Clone(h.sendingRtpParametersByKind[trackKind], &sendingRtpParameters)
 
 	sendingRtpParameters.Codecs = ortc.reduceCodecs(sendingRtpParameters.Codecs, codec)
 
-	utils.Clone(h.sendingRemoteRtpParametersByKind[track.Kind().String()], &sendingRemoteRtpParameters)
+	utils.Clone(h.sendingRemoteRtpParametersByKind[trackKind], &sendingRemoteRtpParameters)
 	sendingRemoteRtpParameters.Codecs = ortc.reduceCodecs(sendingRemoteRtpParameters.Codecs, codec)
 
 	mediaSectionIdx, mediaSectionReuseMid := h.remoteSdp.getNextMediaSectionIdx()
@@ -165,7 +172,7 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 	}
 	localSdpObject := sdp.Parse(offer.SDP)
 
-	fmt.Println(offer.SDP)
+	// fmt.Println(offer.SDP)
 
 	if !h.transportReady {
 		h.setupTransport(mediasoup.DtlsRole_Client, localSdpObject)

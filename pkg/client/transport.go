@@ -24,7 +24,7 @@ type Transport struct {
 }
 
 type DeviceCreateTransportOptions struct {
-	direction               string
+	Direction               string
 	Id                      string          `json:"id,omitempty"`
 	IceParameters           *IceParameters  `json:"iceParameters,omitempty"`
 	IceCandidates           []*IceCandidate `json:"iceCandidates,omitempty"`
@@ -34,23 +34,24 @@ type DeviceCreateTransportOptions struct {
 }
 
 func newTransport(options DeviceCreateTransportOptions) *Transport {
+	direction, id, iceParameters, iceCandidates, dtlsParameters, sctpParameters, extendedRtpCapabilities := options.Direction, options.Id, options.IceParameters, options.IceCandidates, options.DtlsParameters, options.SctpParameters, options.extendedRtpCapabilities
 	transport := &Transport{
 		IEventEmitter:           mediasoup.NewEventEmitter(),
-		id:                      options.Id,
-		direction:               options.direction,
-		extendedRtpCapabilities: options.extendedRtpCapabilities,
+		id:                      id,
+		direction:               direction,
+		extendedRtpCapabilities: extendedRtpCapabilities,
 		handler:                 NewPionHandler(),
 		producers:               make(map[string]*Producer),
 		producerIdChan:          make(chan string, 1), // 发消息是阻塞的，这里必现带缓冲
 	}
 
 	transport.handler.run(HandlerRunOptions{
-		direction:              options.direction,
-		iceParameters:          options.IceParameters,
-		iceCandidates:          options.IceCandidates,
-		dtlsParameters:         options.DtlsParameters,
-		sctpParameters:         options.SctpParameters,
-		extenedRtpCapabilities: options.extendedRtpCapabilities,
+		direction:              direction,
+		iceParameters:          iceParameters,
+		iceCandidates:          iceCandidates,
+		dtlsParameters:         dtlsParameters,
+		sctpParameters:         sctpParameters,
+		extenedRtpCapabilities: extendedRtpCapabilities,
 	})
 
 	transport.handleHandler()
@@ -89,8 +90,9 @@ func (t *Transport) Produce(options TransportProduceOptions) *Producer {
 	producer := NewProducer(ProducerOptions{
 		Id:            id,
 		LocalId:       localId,
-		Kind:          mediasoup.MediaKind(track.Kind().String()),
+		Track:         track,
 		RtpParameters: rtpParameters,
+		AppData:       appData,
 	})
 
 	t.producers[id] = producer
@@ -137,9 +139,9 @@ func (t *Transport) handleHandler() {
 		}
 	})
 
-	handler.On("@iceconnectionstatechange", func(state string) {
+	handler.On("@icegatheringstatechange", func(state string) {
 		if !t.closed {
-			t.SafeEmit("iceconnectionstatechange", state)
+			t.SafeEmit("icegatheringstatechange", state)
 		}
 	})
 

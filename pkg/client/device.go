@@ -62,12 +62,12 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 }
 
 func (d *Device) CreateSendTransport(options DeviceCreateTransportOptions) *Transport {
-	options.direction = "send"
+	options.Direction = "send"
 	return d.createTransport(options)
 }
 
 func (d *Device) CreateRecvTransport(options DeviceCreateTransportOptions) *Transport {
-	options.direction = "recv"
+	options.Direction = "recv"
 	return d.createTransport(options)
 }
 

@@ -1,8 +1,13 @@
 package client
 
 import (
+	"strings"
+
+	"github.com/annidy/mediasoup-client/internal/gptr"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/rs/zerolog/log"
+	"github.com/samber/lo"
 )
 
 type RemoteSdp struct {
@@ -20,8 +25,16 @@ type RemoteSdp struct {
 	mediaSections []*sdp.MediaSection
 }
 
-// TODO: iceParameters、iceCandidates、sctpParameters
-func NewRemoteSdp(iceParameters *IceParameters, iceCandidates []*IceCandidate, dtlsParameters *DtlsParameters, sctpParameters *SctpParameters) *RemoteSdp {
+type RemoteSdpOptions struct {
+	iceParameters  *IceParameters
+	iceCandidates  []*IceCandidate
+	dtlsParameters *DtlsParameters
+	sctpParameters *SctpParameters
+}
+
+func NewRemoteSdp(options RemoteSdpOptions) *RemoteSdp {
+	iceParameters, iceCandidates, dtlsParameters, sctpParameters := options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters
+
 	rdp := &RemoteSdp{
 		iceParameters:  iceParameters,
 		iceCandidates:  iceCandidates,
@@ -48,19 +61,17 @@ func NewRemoteSdp(iceParameters *IceParameters, iceCandidates []*IceCandidate, d
 		},
 		midToIndex: make(map[string]int),
 	}
-	if iceParameters != nil {
-		if iceParameters.IceLite {
-			rdp.sdpObject.IceLite = "ice-lite"
-		}
+	if iceParameters != nil && iceParameters.IceLite {
+		rdp.sdpObject.IceLite = "ice-lite"
 	}
 	if dtlsParameters != nil {
-		rdp.sdpObject.MsidSemantic = struct {
-			Semantics string `json:"semantics,omitempty"`
-			Token     string `json:"token,omitempty"`
+		rdp.sdpObject.MsidSemantic = gptr.Of(struct {
+			Semantics string `json:"semantic"`
+			Token     string `json:"token"`
 		}{
 			Semantics: "WMS",
 			Token:     "*",
-		}
+		})
 
 		i := len(dtlsParameters.Fingerprints) - 1
 
@@ -95,6 +106,7 @@ func (rdp *RemoteSdp) getNextMediaSectionIdx() (idx int, reuseMid string) {
 }
 
 func (rdp *RemoteSdp) updateIceParameters(iceParameters *mediasoup.IceParameters) {
+	log.Debug().Msgf("updateIceParameters [iceParameters:%v]", iceParameters)
 	rdp.iceParameters = iceParameters
 	if iceParameters.IceLite {
 		rdp.sdpObject.IceLite = "ice-lite"
@@ -190,6 +202,15 @@ func (rdp *RemoteSdp) replaceMediaSection(newMediaSection *sdp.MediaSection, reu
 }
 
 func (rdp *RemoteSdp) regenerateBundleMids() {
+	if rdp.dtlsParameters == nil {
+		return
+	}
+	mids := lo.Map(lo.Filter(rdp.mediaSections, func(mediaSection *sdp.MediaSection, index int) bool {
+		return !mediaSection.Closed()
+	}), func(mediaSection *sdp.MediaSection, index int) string {
+		return mediaSection.Mid()
+	})
+	rdp.sdpObject.Groups[0].Mids = strings.Join(mids, " ")
 }
 
 func (rdp *RemoteSdp) updateDtlsRole(role mediasoup.DtlsRole) {

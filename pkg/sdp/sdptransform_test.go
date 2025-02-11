@@ -10,7 +10,7 @@ func TestParse(t *testing.T) {
 o=- 4852366920923876131 1737621625 IN IP4 0.0.0.0
 s=-
 t=0 0
-a=msid-semantic:WMS*
+a=msid-semantic: WMS *
 a=fingerprint:sha-256 47:20:F0:7A:A1:9A:97:6C:F7:8A:1E:EC:C4:3F:72:4B:24:3F:9E:66:3F:09:0C:FB:FF:F5:F5:08:3B:78:C3:90
 a=extmap-allow-mixed
 a=group:BUNDLE 0 1

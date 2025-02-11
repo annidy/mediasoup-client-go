@@ -15,7 +15,7 @@ func Write(spdObject Sdp) (spdStr string) {
 	jsonStr, _ := json.Marshal(spdObject)
 	cJson := C.CString(string(jsonStr))
 	defer C.free(unsafe.Pointer(cJson))
-	cResult := C.sdptransform_parse(cJson)
+	cResult := C.sdptransform_write(cJson)
 	spdStr = C.GoString(cResult)
 	C.free(unsafe.Pointer(cResult))
 	return
@@ -59,10 +59,10 @@ type MeidaCandidates struct {
 
 type MediaObject struct {
 	Candidates []MeidaCandidates `json:"candidates,omitempty"`
-	Connection struct {
+	Connection *struct {
 		IP      string `json:"ip"`
 		Version int    `json:"version"`
-	} `json:"connection"`
+	} `json:"connection,omitempty"`
 	Crypto []struct {
 		Config string `json:"config"`
 		ID     int    `json:"id"`
@@ -74,7 +74,7 @@ type MediaObject struct {
 		Payload int    `json:"payload,omitempty"`
 	} `json:"fmtp,omitempty"`
 	IceOptions      string `json:"iceOptions,omitempty"`
-	EndOfCandidates string `json:"end-of-candidates,omitempty"`
+	EndOfCandidates string `json:"endOfCandidates,omitempty"`
 	IcePwd          string `json:"icePwd,omitempty"`
 	IceUfrag        string `json:"iceUfrag,omitempty"`
 	Maxptime        int    `json:"maxptime,omitempty"`
@@ -122,11 +122,11 @@ type MediaObject struct {
 		Limit int    `json:"limit,omitempty"`
 		Type  string `json:"type,omitempty"`
 	} `json:"bandwidth,omitempty"`
-	Fingerprint struct {
-		Hash string `json:"hash,omitempty"`
-		Type string `json:"type,omitempty"`
+	Fingerprint *struct {
+		Hash string `json:"hash"`
+		Type string `json:"type"`
 	} `json:"fingerprint,omitempty"`
-	Sctpmap struct {
+	Sctpmap *struct {
 		App            string `json:"app,omitempty"`
 		MaxMessageSize int    `json:"maxMessageSize,omitempty"`
 		SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
@@ -140,7 +140,7 @@ type Sdp struct {
 		Mids string `json:"mids"`
 		Type string `json:"type"`
 	} `json:"groups"`
-	Connection struct {
+	Connection *struct {
 		IP      string `json:"ip,omitempty"`
 		Version int    `json:"version,omitempty"`
 	} `json:"connection,omitempty"`
@@ -151,9 +151,9 @@ type Sdp struct {
 	IcePwd       string        `json:"icePwd,omitempty"`
 	IceUfrag     string        `json:"iceUfrag,omitempty"`
 	Media        []MediaObject `json:"media,omitempty"`
-	MsidSemantic struct {
-		Semantics string `json:"semantics,omitempty"`
-		Token     string `json:"token,omitempty"`
+	MsidSemantic *struct {
+		Semantics string `json:"semantic"`
+		Token     string `json:"token"`
 	} `json:"msidSemantic,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Origin struct {
@@ -165,10 +165,10 @@ type Sdp struct {
 		Username       string `json:"username,omitempty"`
 	} `json:"origin,omitempty"`
 	Timing struct {
-		Start int `json:"start,omitempty"`
-		Stop  int `json:"stop,omitempty"`
+		Start int `json:"start"`
+		Stop  int `json:"stop"`
 	} `json:"timing,omitempty"`
-	IceLite string `json:"iceLite,omitempty"`
+	IceLite string `json:"icelite,omitempty"`
 	Version int    `json:"version,omitempty"`
 	// 暂时不知道有什么用
 	ExtmapAllowMixed string `json:"extmapAllowMixed,omitempty"`

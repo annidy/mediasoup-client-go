@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/annidy/mediasoup-client/internal/gptr"
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/client"
 	"github.com/annidy/mediasoup-client/pkg/proto"
@@ -199,11 +200,8 @@ func (r *RoomClient) EnableLocalFile() {
 				ClockRate: 90000,
 				Parameters: mediasoup.RtpCodecSpecificParameters{
 					RtpParameter: h264.RtpParameter{
-						ProfileLevelId: "42e01f",
-						PacketizationMode: func() *uint8 {
-							v := uint8(1)
-							return &v
-						}(),
+						ProfileLevelId:        "42e01f",
+						PacketizationMode:     gptr.Of(uint8(1)),
 						LevelAsymmetryAllowed: uint8(1),
 					},
 				},
@@ -256,6 +254,17 @@ func (r *RoomClient) EnableLocalFile() {
 	}
 
 	if haveAudioFile {
+		file, oggErr := os.Open(audioFileName)
+		if oggErr != nil {
+			panic(oggErr)
+		}
+
+		_, header, oggErr := oggreader.NewWith(file)
+		if oggErr != nil {
+			panic(oggErr)
+		}
+		file.Close()
+
 		// Create a audio track
 		audioTrack, audioTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
 		if audioTrackErr != nil {
@@ -265,7 +274,9 @@ func (r *RoomClient) EnableLocalFile() {
 		_ = r.sendTransport.Produce(client.TransportProduceOptions{
 			Track: audioTrack,
 			Codec: &mediasoup.RtpCodecParameters{
-				MimeType: webrtc.MimeTypeOpus,
+				MimeType:  webrtc.MimeTypeOpus,
+				ClockRate: int(header.SampleRate),
+				Channels:  int(header.Channels),
 			},
 			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
 				// Read incoming RTCP packets
@@ -295,9 +306,6 @@ func (r *RoomClient) EnableLocalFile() {
 			if oggErr != nil {
 				panic(oggErr)
 			}
-
-			// Wait for connection established
-			// <-iceConnectedCtx.Done()
 
 			// Keep track of last granule, the difference is the amount of samples in the buffer
 			var lastGranule uint64
@@ -423,10 +431,13 @@ func (r *RoomClient) joinRoom() {
 		r.sendTransport = r.device.CreateSendTransport(transportOptions)
 
 		r.sendTransport.On("connect", func(dtlsParameters *client.DtlsParameters) {
-			r.peer.Request("connectWebRtcTransport", proto.ConnectWebRtcTransportRequest{
+			if err := r.peer.RequestData("connectWebRtcTransport", proto.ConnectWebRtcTransportRequest{
 				TransportId:    transportOptions.Id,
 				DtlsParameters: dtlsParameters,
-			})
+			}, nil); err != nil {
+				log.Err(err).Msg("connectWebRtcTransport")
+				return
+			}
 		})
 		r.sendTransport.On("produce", func(kind client.MediaKind, rtpParameters *client.RtpParameters, appData any) {
 			type ProduceResponse struct {

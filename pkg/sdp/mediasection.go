@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/annidy/mediasoup-client/internal/gptr"
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/rs/zerolog/log"
@@ -12,8 +13,6 @@ import (
 )
 
 type MediaSection struct {
-	closed      bool
-	mid         string
 	mediaObject MediaObject
 	planB       bool
 }
@@ -78,11 +77,11 @@ func (ms *MediaSection) SetDtlsRole(role mediasoup.DtlsRole) {
 }
 
 func (ms *MediaSection) Closed() bool {
-	return ms.closed
+	return ms.mediaObject.Port == 0
 }
 
 func (ms *MediaSection) Mid() string {
-	return ms.mid
+	return ms.mediaObject.Mid
 }
 
 func (ms *MediaSection) MediaObject() MediaObject {
@@ -99,7 +98,6 @@ type AnswerMediaSectionOptions struct {
 
 type AnswerMediaSection struct {
 	MediaSection
-	mediaObject MediaObject
 }
 
 func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSection {
@@ -113,8 +111,14 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 	ms.mediaObject.Protocol = offerMediaObject.Protocol
 
 	// No plainRtpParameters
-	ms.mediaObject.Connection.IP = "127.0.0.1"
-	ms.mediaObject.Connection.Version = 4
+	ms.mediaObject.Connection = gptr.Of(struct {
+		IP      string `json:"ip"`
+		Version int    `json:"version"`
+	}{
+		IP:      "127.0.0.1",
+		Version: 4,
+	})
+	ms.mediaObject.Port = 7
 
 	switch offerMediaObject.Type {
 	case "audio", "video":

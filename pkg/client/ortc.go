@@ -581,7 +581,7 @@ func (o Ortc) reduceCodecs(codecs []*mediasoup.RtpCodecParameters, capCodec *med
 	} else {
 		for idx, codec := range codecs {
 			if matchCodec(RtpCodec{p: capCodec}, RtpCodec{p: codec}, true, false) {
-				filteredCodecs = append(filteredCodecs, codecs[0])
+				filteredCodecs = append(filteredCodecs, codecs[idx])
 				if len(codecs) > idx+1 && isRtxCodec(RtpCodec{p: codecs[idx+1]}) {
 					filteredCodecs = append(filteredCodecs, codecs[idx+1])
 				}

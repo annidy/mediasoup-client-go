@@ -1,6 +1,8 @@
 package client
 
 import (
+	"fmt"
+
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
@@ -23,7 +25,10 @@ type Handler interface {
 	getNativeSctpCapabilities() mediasoup.SctpCapabilities
 	run(options HandlerRunOptions)
 	restartIce(iceParameters *mediasoup.IceParameters)
+	close() error
 }
+
+type HandlerFactory func() Handler
 
 type PionHandler struct {
 	mediasoup.IEventEmitter
@@ -74,7 +79,7 @@ func (h *PionHandler) getNativeRouterRtpCapabilities() RtpCapabilities {
 	}
 	pc.Close()
 
-	// log.Info().Str("SDP", offer.SDP).Msg("CreateOffer")
+	fmt.Println(offer.SDP)
 
 	sdpObject := sdp.Parse(offer.SDP)
 	nativeRtpCapabilities := extractRtpCapabilities(sdpObject)
@@ -95,7 +100,7 @@ func (h *PionHandler) getNativeSctpCapabilities() mediasoup.SctpCapabilities {
 }
 
 func (h *PionHandler) run(options HandlerRunOptions) {
-	iceParameters, iceCandidates, dtlsParameters, sctpParameters, direction := options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters, options.direction
+	iceParameters, iceCandidates, dtlsParameters, sctpParameters, direction, extenedRtpCapabilities := options.iceParameters, options.iceCandidates, options.dtlsParameters, options.sctpParameters, options.direction, options.extenedRtpCapabilities
 
 	h.direction = direction
 	h.remoteSdp = NewRemoteSdp(RemoteSdpOptions{
@@ -105,12 +110,12 @@ func (h *PionHandler) run(options HandlerRunOptions) {
 		sctpParameters: sctpParameters,
 	})
 	h.sendingRtpParametersByKind = map[string]*RtpParameters{
-		"audio": ortc.getSendingRtpParameters(mediasoup.MediaKind_Audio, options.extenedRtpCapabilities),
-		"video": ortc.getSendingRtpParameters(mediasoup.MediaKind_Video, options.extenedRtpCapabilities),
+		"audio": ortc.getSendingRtpParameters(mediasoup.MediaKind_Audio, extenedRtpCapabilities),
+		"video": ortc.getSendingRtpParameters(mediasoup.MediaKind_Video, extenedRtpCapabilities),
 	}
 	h.sendingRemoteRtpParametersByKind = map[string]*RtpParameters{
-		"audio": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Audio, options.extenedRtpCapabilities),
-		"video": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Video, options.extenedRtpCapabilities),
+		"audio": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Audio, extenedRtpCapabilities),
+		"video": ortc.getSendingRemoteRtpParameters(mediasoup.MediaKind_Video, extenedRtpCapabilities),
 	}
 
 	config := webrtc.Configuration{
@@ -237,4 +242,15 @@ func (h *PionHandler) setupTransport(localDtlsRole mediasoup.DtlsRole, localSdpO
 	h.SafeEmit("@connect", dtlsParameters)
 
 	h.transportReady = true
+}
+
+func (h *PionHandler) close() error {
+	if h.pc != nil {
+		if err := h.pc.Close(); err != nil {
+			log.Err(err).Msg("cannot close pc")
+			return err
+		}
+		h.pc = nil
+	}
+	return nil
 }

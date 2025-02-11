@@ -19,6 +19,7 @@ type Producer struct {
 	track         webrtc.TrackLocal
 	rtpParameters *mediasoup.RtpParameters
 	appData       any
+	closed        bool
 }
 
 func NewProducer(options ProducerOptions) *Producer {
@@ -35,7 +36,32 @@ func NewProducer(options ProducerOptions) *Producer {
 	return p
 }
 
-func (p *Producer) Close() {}
+func (p *Producer) Close() {
+	if p.closed {
+		return
+	}
+	p.closed = true
+
+	p.destroyTrack()
+
+	p.Emit("close")
+}
+
+func (p *Producer) TransportClosed() {
+	if p.closed {
+		return
+	}
+	p.closed = true
+
+	p.destroyTrack()
+
+	p.Emit("transportclose")
+	p.SafeEmit("close")
+}
+
+func (p *Producer) destroyTrack() {
+	// TODO: stop track
+}
 
 func (p *Producer) Id() string {
 	return p.id

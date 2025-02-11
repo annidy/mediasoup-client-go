@@ -15,16 +15,15 @@ type Device struct {
 	sctpCapabilities        mediasoup.SctpCapabilities
 	extendedRtpCapabilities *RtpCapabilitiesEx
 	loaded                  atomic.Bool
-	handler                 *PionHandler
+	handlerFactory          func() *PionHandler
 	canProduceByKind        map[mediasoup.MediaKind]bool
 }
 
 func NewDevice() *Device {
-	handler := NewPionHandler()
 
 	return &Device{
-		Name:    "pion",
-		handler: handler,
+		Name:           "pion",
+		handlerFactory: NewPionHandler,
 		canProduceByKind: map[mediasoup.MediaKind]bool{
 			mediasoup.MediaKind_Audio: true,
 			mediasoup.MediaKind_Video: true,
@@ -43,7 +42,10 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 		panic(err)
 	}
 
-	nativeRtpCapabilities := d.handler.getNativeRouterRtpCapabilities()
+	handler := d.handlerFactory()
+	defer handler.close()
+
+	nativeRtpCapabilities := handler.getNativeRouterRtpCapabilities()
 	var clonedNativeRtpCapabilities mediasoup.RtpCapabilities
 	utils.Clone(nativeRtpCapabilities, &clonedNativeRtpCapabilities)
 	if err := ortc.validateRtpCapabilities(&clonedNativeRtpCapabilities); err != nil {
@@ -58,7 +60,7 @@ func (d *Device) Load(routerRtpCapabilities RtpCapabilities) {
 	if err := ortc.validateRtpCapabilities(&d.recvRtpCapabilities); err != nil {
 		panic(err)
 	}
-	d.sctpCapabilities = d.handler.getNativeSctpCapabilities()
+	d.sctpCapabilities = handler.getNativeSctpCapabilities()
 }
 
 func (d *Device) CreateSendTransport(options DeviceCreateTransportOptions) *Transport {

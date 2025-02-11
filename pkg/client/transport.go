@@ -186,3 +186,20 @@ func (t *Transport) handleProducer(producer *Producer) {
 func (t *Transport) ProducerIdChan() chan<- string {
 	return t.producerIdChan
 }
+
+func (t *Transport) Close() {
+	if t.closed {
+		return
+	}
+
+	t.closed = true
+
+	t.handler.close()
+
+	for _, producer := range t.producers {
+		producer.TransportClosed()
+	}
+	clear(t.producers)
+
+	t.SafeEmit("close")
+}

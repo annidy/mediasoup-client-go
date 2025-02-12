@@ -3,8 +3,10 @@ package sdp
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/Jeffail/gabs"
 	"github.com/annidy/mediasoup-client/internal/gptr"
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/jiyeyuran/mediasoup-go"
@@ -88,11 +90,25 @@ func (ms *MediaSection) MediaObject() MediaObject {
 	return ms.mediaObject
 }
 
+type ProducerCodecOptions struct {
+	OpusStereo              *bool
+	OpusFec                 *bool
+	OpusDtx                 *bool
+	OpusMaxPlaybackRate     *int
+	OpusMaxAverageBitrate   *int
+	OpusPtime               *int
+	OpusNack                *bool
+	VideoGoogleStartBitrate *int
+	VideoGoogleMaxBitrate   *int
+	VideoGoogleMinBitrate   *int
+}
+
 type AnswerMediaSectionOptions struct {
 	MediaSectionOptions
 	OfferMediaObject    MediaObject
 	AnswerRtpParameters mediasoup.RtpParameters
-	CodecOptions        []*mediasoup.RtpCodecParameters
+	OfferRtpParameters  mediasoup.RtpParameters
+	CodecOptions        ProducerCodecOptions
 	ExtmapAllowMixed    bool
 }
 
@@ -101,7 +117,7 @@ type AnswerMediaSection struct {
 }
 
 func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSection {
-	offerMediaObject, answerRtpParameters, extmapAllowMixed := options.OfferMediaObject, options.AnswerRtpParameters, options.ExtmapAllowMixed
+	offerMediaObject, answerRtpParameters, extmapAllowMixed, codecOptions := options.OfferMediaObject, options.AnswerRtpParameters, options.ExtmapAllowMixed, options.CodecOptions
 	ms := &AnswerMediaSection{
 		MediaSection: *NewMediaSection(options.MediaSectionOptions),
 	}
@@ -131,7 +147,7 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 				Rate     int    `json:"rate,omitempty"`
 				Encoding string `json:"encoding,omitempty"`
 			}{
-				Codec:   codec.MimeType,
+				Codec:   getCodecName(codec),
 				Payload: int(codec.PayloadType),
 				Rate:    codec.ClockRate,
 			}
@@ -147,6 +163,50 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 			var codecRtcpFeedback []mediasoup.RtcpFeedback
 			utils.Clone(codec.RtcpFeedback, &codecRtcpFeedback)
 
+			opusStereo, opusFec, opusDtx, opusMaxPlaybackRate, opusMaxAverageBitrate, opusPtime, opusNack, videoGoogleStartBitrate, videoGoogleMaxBitrate, videoGoogleMinBitrate := codecOptions.OpusStereo, codecOptions.OpusFec, codecOptions.OpusDtx, codecOptions.OpusMaxPlaybackRate, codecOptions.OpusMaxAverageBitrate, codecOptions.OpusPtime, codecOptions.OpusNack, codecOptions.VideoGoogleStartBitrate, codecOptions.VideoGoogleMaxBitrate, codecOptions.VideoGoogleMinBitrate
+
+			switch strings.ToLower(codec.MimeType) {
+			case "audio/opus", "audio/multiopus":
+				if opusStereo != nil {
+					codecParameters.SpropStereo = utils.Bool2Type[uint8](*opusStereo)
+				}
+				if opusFec != nil {
+					codecParameters.Useinbandfec = utils.Bool2Type[uint8](*opusFec)
+				}
+				if opusDtx != nil {
+					codecParameters.Usedtx = utils.Bool2Type[uint8](*opusDtx)
+				}
+				if opusMaxPlaybackRate != nil {
+					codecParameters.Maxplaybackrate = uint32(*opusMaxPlaybackRate)
+				}
+				if opusMaxAverageBitrate != nil {
+					// TODO: no maxaveragebitrate in codecParameters
+				}
+				if opusPtime != nil {
+					// TODO: no ptime in codecParameters
+				}
+
+				// If opusNack is not set, we must remove NACK support for OPUS.
+				// Otherwise it would be enabled for those handlers that artificially
+				// announce it in their RTP capabilities.
+				if opusNack != nil {
+					codecRtcpFeedback = lo.Filter(codecRtcpFeedback, func(fb mediasoup.RtcpFeedback, index int) bool {
+						return fb.Type != "nack" || fb.Parameter != ""
+					})
+				}
+
+			case "video/vp8", "video/vp9", "video/h264", "video/h265":
+				if videoGoogleStartBitrate != nil {
+					codecParameters.XGoogleStartBitrate = uint32(*videoGoogleStartBitrate)
+				}
+				if videoGoogleMaxBitrate != nil {
+					codecParameters.XGoogleMaxBitrate = uint32(*videoGoogleMaxBitrate)
+				}
+				if videoGoogleMinBitrate != nil {
+					codecParameters.XGoogleMinBitrate = uint32(*videoGoogleMinBitrate)
+				}
+			}
+
 			fmtp := struct {
 				Config  string `json:"config,omitempty"`
 				Payload int    `json:"payload,omitempty"`
@@ -155,13 +215,9 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 			}
 
 			jc, _ := json.Marshal(codecParameters)
-			var jcodecParameters map[string]string
-			json.Unmarshal(jc, &jcodecParameters)
-
-			for key, value := range jcodecParameters {
-				if len(value) == 0 {
-					continue
-				}
+			jsonParsed, _ := gabs.ParseJSON(jc)
+			contaner, _ := jsonParsed.ChildrenMap()
+			for key, value := range contaner {
 				if len(fmtp.Config) > 0 {
 					fmtp.Config += "; "
 				}
@@ -182,43 +238,52 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 				}
 				ms.mediaObject.RtcpFb = append(ms.mediaObject.RtcpFb, rtcpFb)
 			}
-		}
 
-		ms.mediaObject.Payloads = strings.Join(lo.Map(answerRtpParameters.Codecs, func(codec *mediasoup.RtpCodecParameters, index int) string {
-			return fmt.Sprintf("%d", codec.PayloadType)
-		}), " ")
+			ms.mediaObject.Payloads = strings.Join(lo.Map(answerRtpParameters.Codecs, func(codec *mediasoup.RtpCodecParameters, index int) string {
+				return fmt.Sprintf("%d", codec.PayloadType)
+			}), " ")
 
-		for _, ext := range answerRtpParameters.HeaderExtensions {
-			var found bool
-			for _, offerExt := range offerMediaObject.Ext {
-				if offerExt.Uri == ext.Uri {
-					found = true
-					break
+			for _, ext := range answerRtpParameters.HeaderExtensions {
+				var found bool
+				for _, offerExt := range offerMediaObject.Ext {
+					if offerExt.Uri == ext.Uri {
+						found = true
+						break
+					}
 				}
-			}
-			if !found {
-				continue
-			}
-			ms.mediaObject.Ext = append(ms.mediaObject.Ext, struct {
-				EncryptUri string `json:"encrypt-uri,omitempty"`
-				Uri        string `json:"uri,omitempty"`
-				Value      int    `json:"value,omitempty"`
-			}{
-				Value: ext.Id,
-				Uri:   ext.Uri,
-			})
+				if !found {
+					continue
+				}
+				ms.mediaObject.Ext = append(ms.mediaObject.Ext, struct {
+					EncryptUri string `json:"encrypt-uri,omitempty"`
+					Uri        string `json:"uri,omitempty"`
+					Value      int    `json:"value,omitempty"`
+				}{
+					Value: ext.Id,
+					Uri:   ext.Uri,
+				})
 
-			if extmapAllowMixed && offerMediaObject.ExtmapAllowMixed == "extmap-allow-mixed" {
-				ms.mediaObject.ExtmapAllowMixed = "extmap-allow-mixed"
-			}
-			// TODO: Simulcast
+				if extmapAllowMixed && offerMediaObject.ExtmapAllowMixed == "extmap-allow-mixed" {
+					ms.mediaObject.ExtmapAllowMixed = "extmap-allow-mixed"
+				}
+				// TODO: Simulcast
 
-			ms.mediaObject.RtcpMux = "rtcp-mux"
-			ms.mediaObject.RtcpRsize = "rtcp-rsize"
+				ms.mediaObject.RtcpMux = "rtcp-mux"
+				ms.mediaObject.RtcpRsize = "rtcp-rsize"
+			}
 		}
 	default:
 		log.Warn().Msgf("ignoring media section with unsupported type: %s", offerMediaObject.Type)
 	}
 
 	return ms
+}
+
+func getCodecName(codec *mediasoup.RtpCodecParameters) string {
+	mineTypeRegex := regexp.MustCompile(`(audio|video)/(.+)`)
+	matches := mineTypeRegex.FindStringSubmatch(codec.MimeType)
+	if len(matches) < 3 {
+		return ""
+	}
+	return matches[2]
 }

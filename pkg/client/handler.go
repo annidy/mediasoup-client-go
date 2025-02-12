@@ -139,7 +139,7 @@ func (h *PionHandler) run(options HandlerRunOptions) {
 
 type HandlerSendOptions struct {
 	track        webrtc.TrackLocal
-	codecOptions []*mediasoup.RtpCodecParameters
+	codecOptions sdp.ProducerCodecOptions
 	codec        *mediasoup.RtpCodecParameters
 	onRtpSender  func(*webrtc.RTPSender)
 }
@@ -183,7 +183,9 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 		h.setupTransport(mediasoup.DtlsRole_Client, localSdpObject)
 	}
 
-	h.pc.SetLocalDescription(offer)
+	if err := h.pc.SetLocalDescription(offer); err != nil {
+		panic(err)
+	}
 
 	// We can now get the transceiver.mid.
 	localId = transceiver.Mid()
@@ -191,8 +193,8 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 	// Set MID
 	sendingRtpParameters.Mid = localId
 
-	// Why reparse? This is wrong.
-	// localSdpObject = sdp.Parse(h.pc.LocalDescription().SDP)
+	// maybe this is different with previous sdp
+	localSdpObject = sdp.Parse(h.pc.LocalDescription().SDP)
 
 	offerMediaObject := localSdpObject.Media[mediaSectionIdx]
 
@@ -215,7 +217,9 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 		SDP:  h.remoteSdp.getSdp(),
 	}
 
-	h.pc.SetRemoteDescription(answer)
+	if err := h.pc.SetRemoteDescription(answer); err != nil {
+		panic(err)
+	}
 
 	// Store in the map.
 	h.mapMidTransceiver[localId] = transceiver

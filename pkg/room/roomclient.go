@@ -13,6 +13,7 @@ import (
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/client"
 	"github.com/annidy/mediasoup-client/pkg/proto"
+	"github.com/annidy/mediasoup-client/pkg/sdp"
 
 	"github.com/gorilla/websocket"
 	"github.com/jiyeyuran/go-protoo"
@@ -206,6 +207,9 @@ func (r *RoomClient) EnableLocalFile() {
 					},
 				},
 			},
+			CodecOptions: sdp.ProducerCodecOptions{
+				VideoGoogleStartBitrate: gptr.Of(1000),
+			},
 			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
 				// Read incoming RTCP packets
 				// Before these packets are returned they are processed by interceptors. For things
@@ -266,7 +270,12 @@ func (r *RoomClient) EnableLocalFile() {
 		file.Close()
 
 		// Create a audio track
-		audioTrack, audioTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
+		audioTrack, audioTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{
+			MimeType:  webrtc.MimeTypeOpus,
+			ClockRate: header.SampleRate,
+			Channels:  uint16(header.Channels),
+		}, "audio", "pion")
+		fmt.Printf("%+v", audioTrack.Codec())
 		if audioTrackErr != nil {
 			panic(audioTrackErr)
 		}
@@ -277,6 +286,17 @@ func (r *RoomClient) EnableLocalFile() {
 				MimeType:  webrtc.MimeTypeOpus,
 				ClockRate: int(header.SampleRate),
 				Channels:  int(header.Channels),
+				Parameters: mediasoup.RtpCodecSpecificParameters{
+					SpropStereo:  uint8(1),
+					Useinbandfec: uint8(1),
+					Usedtx:       uint8(1),
+				},
+			},
+			CodecOptions: sdp.ProducerCodecOptions{
+				OpusStereo: gptr.Of(true),
+				OpusDtx:    gptr.Of(true),
+				OpusFec:    gptr.Of(true),
+				OpusNack:   gptr.Of(true),
 			},
 			OnRtpSender: func(rtpSender *webrtc.RTPSender) {
 				// Read incoming RTCP packets

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/pion/webrtc/v4"
 	"github.com/rs/zerolog/log"
@@ -61,14 +62,14 @@ func newTransport(options DeviceCreateTransportOptions) *Transport {
 
 type TransportProduceOptions struct {
 	Track        webrtc.TrackLocal
-	codecOptions []*mediasoup.RtpCodecParameters
+	CodecOptions sdp.ProducerCodecOptions
 	Codec        *mediasoup.RtpCodecParameters
 	OnRtpSender  func(*webrtc.RTPSender)
 	AppData      any
 }
 
 func (t *Transport) Produce(options TransportProduceOptions) *Producer {
-	track, codecOptions, codec, onRtpSender, appData := options.Track, options.codecOptions, options.Codec, options.OnRtpSender, options.AppData
+	track, codecOptions, codec, onRtpSender, appData := options.Track, options.CodecOptions, options.Codec, options.OnRtpSender, options.AppData
 
 	localId, rtpParameters, _ := t.handler.send(HandlerSendOptions{
 		track:        track,

@@ -59,3 +59,11 @@ func (ptrTransformers) Transformer(tp reflect.Type) func(dst, src reflect.Value)
 	}
 	return nil
 }
+
+func Bool2Type[T ~int | ~int8 | ~uint | ~uint8](b bool) T {
+	if b {
+		return 1 // 返回对应类型的1
+	}
+	var zero T // 定义零值
+	return zero
+}

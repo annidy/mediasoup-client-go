@@ -123,7 +123,7 @@ type SendTransportOptions struct {
 	reuseMid            string
 	offerRtpParameters  mediasoup.RtpParameters
 	answerRtpParameters mediasoup.RtpParameters
-	codecOptions        []*mediasoup.RtpCodecParameters
+	codecOptions        sdp.ProducerCodecOptions
 	extmapAllowMixed    bool
 }
 

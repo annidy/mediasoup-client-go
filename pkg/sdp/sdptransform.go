@@ -8,16 +8,19 @@ package sdp
 import "C"
 import (
 	"encoding/json"
+	"fmt"
 	"unsafe"
 )
 
 func Write(spdObject Sdp) (spdStr string) {
 	jsonStr, _ := json.Marshal(spdObject)
+	fmt.Println(string(jsonStr))
 	cJson := C.CString(string(jsonStr))
 	defer C.free(unsafe.Pointer(cJson))
 	cResult := C.sdptransform_write(cJson)
 	spdStr = C.GoString(cResult)
 	C.free(unsafe.Pointer(cResult))
+	fmt.Println(spdStr)
 	return
 }
 
@@ -29,6 +32,7 @@ func Parse(sdpStr string) (spdObject Sdp) {
 	C.free(unsafe.Pointer(cResult))
 	json.Unmarshal([]byte(jsonStr), &spdObject)
 	checkMissingKeys[Sdp](jsonStr)
+	fmt.Println(jsonStr)
 	return
 }
 
@@ -59,10 +63,10 @@ type MeidaCandidates struct {
 
 type MediaObject struct {
 	Candidates []MeidaCandidates `json:"candidates,omitempty"`
-	Connection *struct {
+	Connection struct {
 		IP      string `json:"ip"`
 		Version int    `json:"version"`
-	} `json:"connection,omitempty"`
+	} `json:"connection,omitzero"`
 	Crypto []struct {
 		Config string `json:"config"`
 		ID     int    `json:"id"`
@@ -122,15 +126,15 @@ type MediaObject struct {
 		Limit int    `json:"limit,omitempty"`
 		Type  string `json:"type,omitempty"`
 	} `json:"bandwidth,omitempty"`
-	Fingerprint *struct {
+	Fingerprint struct {
 		Hash string `json:"hash"`
 		Type string `json:"type"`
-	} `json:"fingerprint,omitempty"`
-	Sctpmap *struct {
+	} `json:"fingerprint,omitzero"`
+	Sctpmap struct {
 		App            string `json:"app,omitempty"`
 		MaxMessageSize int    `json:"maxMessageSize,omitempty"`
 		SctpmapNumber  int    `json:"sctpmapNumber,omitempty"`
-	} `json:"sctpmap,omitempty"`
+	} `json:"sctpmap,omitzero"`
 	Setup            string `json:"setup,omitempty"`
 	ExtmapAllowMixed string `json:"extmapAllowMixed,omitempty"`
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/Jeffail/gabs"
-	"github.com/annidy/mediasoup-client/internal/gptr"
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/jiyeyuran/mediasoup-go"
 	"github.com/rs/zerolog/log"
@@ -127,13 +126,13 @@ func NewAnswerMediaSection(options AnswerMediaSectionOptions) *AnswerMediaSectio
 	ms.mediaObject.Protocol = offerMediaObject.Protocol
 
 	// No plainRtpParameters
-	ms.mediaObject.Connection = gptr.Of(struct {
+	ms.mediaObject.Connection = struct {
 		IP      string `json:"ip"`
 		Version int    `json:"version"`
 	}{
 		IP:      "127.0.0.1",
 		Version: 4,
-	})
+	}
 	ms.mediaObject.Port = 7
 
 	switch offerMediaObject.Type {

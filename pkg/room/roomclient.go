@@ -22,11 +22,19 @@ import (
 	"github.com/jiyeyuran/mediasoup-go/h264"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/json-iterator/go/extra"
+	"github.com/pion/mediadevices"
+	"github.com/pion/mediadevices/pkg/frame"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/pion/webrtc/v4/pkg/media/h264reader"
 	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 	"github.com/rs/zerolog/log"
+
+	"github.com/pion/mediadevices/pkg/codec/opus" // This is required to use opus audio encoder
+	"github.com/pion/mediadevices/pkg/codec/x264"
+	_ "github.com/pion/mediadevices/pkg/driver/camera"     // This is required to register camera adapter
+	_ "github.com/pion/mediadevices/pkg/driver/microphone" // This is required to register microphone adapter
+	"github.com/pion/mediadevices/pkg/prop"
 )
 
 func init() {
@@ -48,14 +56,40 @@ type RoomClient struct {
 	webcamProducer   *client.Producer
 	chatDataProducer *client.DataProducer
 	displayName      string
+	enableMic        bool
+	enableWebcam     bool
+	enableLocalFile  bool
+
+	codecSelector *mediadevices.CodecSelector
+	mediaEngine   *webrtc.MediaEngine
 }
 
 func NewRoomClient() *RoomClient {
+	x264Params, err := x264.NewParams()
+	if err != nil {
+		panic(err)
+	}
+	x264Params.Preset = x264.PresetMedium
+	x264Params.BitRate = 500_000 // 500kbps
+
+	opusParams, err := opus.NewParams()
+	if err != nil {
+		panic(err)
+	}
+	codecSelector := mediadevices.NewCodecSelector(
+		mediadevices.WithVideoEncoders(&x264Params),
+		mediadevices.WithAudioEncoders(&opusParams),
+	)
+
 	return &RoomClient{
-		produce:     true,
-		consume:     true,
-		displayName: utils.RandomAlpha(8),
-		peers:       make(map[string]*proto.PeerData),
+		produce:         true,
+		consume:         true,
+		displayName:     utils.RandomAlpha(8),
+		peers:           make(map[string]*proto.PeerData),
+		enableMic:       true,
+		enableWebcam:    true,
+		enableLocalFile: false,
+		codecSelector:   codecSelector,
 	}
 }
 
@@ -125,11 +159,44 @@ func (r *RoomClient) Consume(peerId string) {
 	r.consume = true
 }
 
+// https://github.com/pion/mediadevices/tree/master/examples/webrtc
 func (r *RoomClient) EnableMic() {
-	// TODO:
-	// - getUserMedia
-	// - getAudioTrack
-	// - createProducer
+	if r.micProducer != nil {
+		return
+	}
+	s, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
+		Audio: func(c *mediadevices.MediaTrackConstraints) {
+			c.ChannelCount = prop.Int(2)
+			c.SampleRate = prop.Int(48000)
+		},
+		Codec: r.codecSelector,
+	})
+	if err != nil {
+		panic(err)
+	}
+	track := s.GetAudioTracks()[0]
+
+	_ = r.sendTransport.Produce(client.TransportProduceOptions{
+		Track: track,
+		Codec: &mediasoup.RtpCodecParameters{
+			MimeType:  webrtc.MimeTypeOpus,
+			ClockRate: 48000,
+			Channels:  2,
+			Parameters: mediasoup.RtpCodecSpecificParameters{
+				SpropStereo:  uint8(1),
+				Useinbandfec: uint8(1),
+				Usedtx:       uint8(1),
+			},
+		},
+		CodecOptions: sdp.ProducerCodecOptions{
+			OpusStereo: gptr.Of(true),
+			OpusDtx:    gptr.Of(true),
+			OpusFec:    gptr.Of(true),
+			OpusNack:   gptr.Of(true),
+		},
+		OnRtpSender: nil,
+		AppData:     map[string]any{},
+	})
 }
 
 func (r *RoomClient) DisableMic() {
@@ -168,10 +235,78 @@ func (r *RoomClient) UnmuteMic() {
 }
 
 func (r *RoomClient) EnableWebcam() {
-	// TODO:
-	// - getUserMedia
-	// - getVideoTrack
-	// - createProducer
+	if r.webcamProducer != nil {
+		return
+	}
+	s, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
+		Video: func(c *mediadevices.MediaTrackConstraints) {
+			c.FrameFormat = prop.FrameFormat(frame.FormatI420)
+			c.Width = prop.Int(640)
+			c.Height = prop.Int(480)
+		},
+		Audio: nil,
+		Codec: r.codecSelector,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	track := s.GetVideoTracks()[0]
+
+	_ = r.sendTransport.Produce(client.TransportProduceOptions{
+		Track: track,
+		Codec: &mediasoup.RtpCodecParameters{
+			MimeType:  webrtc.MimeTypeH264,
+			ClockRate: 90000,
+			Parameters: mediasoup.RtpCodecSpecificParameters{
+				RtpParameter: h264.RtpParameter{
+					ProfileLevelId:        "42e01f",
+					PacketizationMode:     gptr.Of(uint8(1)),
+					LevelAsymmetryAllowed: uint8(1),
+				},
+			},
+		},
+		CodecOptions: sdp.ProducerCodecOptions{
+			VideoGoogleStartBitrate: gptr.Of(1000),
+		},
+		OnRtpSender: nil,
+		AppData:     map[string]any{},
+	})
+}
+
+func (r *RoomClient) MuteWebcam() {
+	if r.webcamProducer == nil {
+		return
+	}
+	r.webcamProducer.Pause()
+
+	r.peer.Request("pauseProducer", proto.PauseProducerRequest{
+		ProducerId: r.webcamProducer.Id(),
+	})
+}
+
+func (r *RoomClient) UnmuteWebcam() {
+	if r.webcamProducer == nil {
+		return
+	}
+	r.webcamProducer.Resume()
+
+	r.peer.Request("resumeProducer", proto.ResumeProducerRequest{
+		ProducerId: r.webcamProducer.Id(),
+	})
+}
+
+func (r *RoomClient) DisableWebcam() {
+	if r.webcamProducer == nil {
+		return
+	}
+	r.webcamProducer.Close()
+
+	r.peer.Request("closeProducer", proto.CloseProducerRequest{
+		ProducerId: r.webcamProducer.Id(),
+	})
+
+	r.webcamProducer = nil
 }
 
 func (r *RoomClient) EnableLocalFile() {
@@ -186,10 +321,8 @@ func (r *RoomClient) EnableLocalFile() {
 	}
 
 	if haveVideoFile {
-		var trackCodec string = webrtc.MimeTypeH264
-
 		// Create a video track
-		videoTrack, videoTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: trackCodec}, "video", "pion")
+		videoTrack, videoTrackErr := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "pion")
 		if videoTrackErr != nil {
 			panic(videoTrackErr)
 		}
@@ -197,7 +330,7 @@ func (r *RoomClient) EnableLocalFile() {
 		_ = r.sendTransport.Produce(client.TransportProduceOptions{
 			Track: videoTrack,
 			Codec: &mediasoup.RtpCodecParameters{
-				MimeType:  trackCodec,
+				MimeType:  webrtc.MimeTypeH264,
 				ClockRate: 90000,
 				Parameters: mediasoup.RtpCodecSpecificParameters{
 					RtpParameter: h264.RtpParameter{
@@ -359,19 +492,6 @@ func (r *RoomClient) EnableLocalFile() {
 	}
 }
 
-func (r *RoomClient) DisableWebcam() {
-	if r.webcamProducer == nil {
-		return
-	}
-	r.webcamProducer.Close()
-
-	r.peer.Request("closeProducer", proto.CloseProducerRequest{
-		ProducerId: r.webcamProducer.Id(),
-	})
-
-	r.webcamProducer = nil
-}
-
 func (r *RoomClient) enableChatDataProducer() {
 	r.chatDataProducer = r.sendTransport.ProduceData(client.TransportProduceDataOptions{
 		Ordered:        false,
@@ -530,9 +650,15 @@ func (r *RoomClient) joinRoom() {
 
 	// Enable mic/webcam.
 	if r.produce {
-		// r.EnableMic()
-		// r.EnableWebcam()
-		r.EnableLocalFile()
+		if r.enableMic {
+			r.EnableMic()
+		}
+		if r.enableWebcam {
+			r.EnableWebcam()
+		}
+		if r.enableLocalFile {
+			r.EnableLocalFile()
+		}
 
 		r.sendTransport.On("connectionstatechange", func(connectionState webrtc.PeerConnectionState) {
 			if connectionState == webrtc.PeerConnectionStateConnected {

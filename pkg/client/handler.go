@@ -6,6 +6,9 @@ import (
 	"github.com/annidy/mediasoup-client/internal/utils"
 	"github.com/annidy/mediasoup-client/pkg/sdp"
 	"github.com/jiyeyuran/mediasoup-go"
+	"github.com/pion/mediadevices"
+	"github.com/pion/mediadevices/pkg/codec/opus"
+	"github.com/pion/mediadevices/pkg/codec/x264"
 	"github.com/pion/webrtc/v4"
 	"github.com/rs/zerolog/log"
 )
@@ -39,14 +42,34 @@ type PionHandler struct {
 	pc                               *webrtc.PeerConnection
 	mapMidTransceiver                map[string]*webrtc.RTPTransceiver
 	transportReady                   bool
+	api                              *webrtc.API
 }
 
 var _ Handler = (*PionHandler)(nil)
 
 func NewPionHandler() *PionHandler {
+	x264Params, err := x264.NewParams()
+	if err != nil {
+		panic(err)
+	}
+	opusParams, err := opus.NewParams()
+	if err != nil {
+		panic(err)
+	}
+	codecSelector := mediadevices.NewCodecSelector(
+		mediadevices.WithVideoEncoders(&x264Params),
+		mediadevices.WithAudioEncoders(&opusParams),
+	)
+
+	mediaEngine := webrtc.MediaEngine{}
+	codecSelector.Populate(&mediaEngine)
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(&mediaEngine))
+
 	return &PionHandler{
 		IEventEmitter:     mediasoup.NewEventEmitter(),
 		mapMidTransceiver: make(map[string]*webrtc.RTPTransceiver),
+		api:               api,
 	}
 }
 
@@ -55,7 +78,7 @@ func (h *PionHandler) getNativeRtpCapabilities() RtpCapabilities {
 }
 
 func (h *PionHandler) getNativeRouterRtpCapabilities() RtpCapabilities {
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+	pc, err := h.api.NewPeerConnection(webrtc.Configuration{
 		ICEServers:         []webrtc.ICEServer{},
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
 		BundlePolicy:       webrtc.BundlePolicyBalanced,
@@ -122,7 +145,7 @@ func (h *PionHandler) run(options HandlerRunOptions) {
 		// TODO: iceServers
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	pc, err := h.api.NewPeerConnection(config)
 	if err != nil {
 		panic(err)
 	}

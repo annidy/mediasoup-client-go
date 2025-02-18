@@ -44,21 +44,23 @@ func init() {
 var json jsoniter.API = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type RoomClient struct {
-	produce          bool // 是否推流
-	consume          bool // 是否拉流
-	peer             *Protoo
-	peers            map[string]*proto.PeerData // 房间中的其它人
-	device           *client.Device             // 包装设备
-	sendTransport    *client.Transport
-	recvTransport    *client.Transport
-	closed           uint32
-	micProducer      *client.Producer
-	webcamProducer   *client.Producer
-	chatDataProducer *client.DataProducer
-	displayName      string
-	enableMic        bool
-	enableWebcam     bool
-	enableLocalFile  bool
+	produce             bool // 是否推流
+	consume             bool // 是否拉流
+	peer                *Protoo
+	peers               map[string]*proto.PeerData // 房间中的其它人
+	device              *client.Device             // 包装设备
+	sendTransport       *client.Transport
+	recvTransport       *client.Transport
+	closed              uint32
+	micProducer         *client.Producer
+	webcamProducer      *client.Producer
+	chatDataProducer    *client.DataProducer
+	displayName         string
+	enableMic           bool
+	enableWebcam        bool
+	enableLocalFile     bool
+	enableWebcamLayers  bool
+	numSimulcastStreams int
 
 	codecSelector *mediadevices.CodecSelector
 	mediaEngine   *webrtc.MediaEngine
@@ -82,14 +84,16 @@ func NewRoomClient() *RoomClient {
 	)
 
 	return &RoomClient{
-		produce:         true,
-		consume:         true,
-		displayName:     utils.RandomAlpha(8),
-		peers:           make(map[string]*proto.PeerData),
-		enableMic:       true,
-		enableWebcam:    true,
-		enableLocalFile: false,
-		codecSelector:   codecSelector,
+		produce:             true,
+		consume:             true,
+		displayName:         utils.RandomAlpha(8),
+		peers:               make(map[string]*proto.PeerData),
+		enableMic:           true,
+		enableWebcam:        true,
+		enableLocalFile:     false,
+		codecSelector:       codecSelector,
+		enableWebcamLayers:  true,
+		numSimulcastStreams: 3,
 	}
 }
 
@@ -251,6 +255,29 @@ func (r *RoomClient) EnableWebcam() {
 		panic(err)
 	}
 
+	var encodings []mediasoup.RtpEncodingParameters
+	if r.enableWebcamLayers {
+		encodings = append(encodings, mediasoup.RtpEncodingParameters{
+			Rid:                   "r0",
+			ScaleResolutionDownBy: 1,
+			MaxBitrate:            5000000,
+		})
+		if r.numSimulcastStreams > 1 {
+			encodings = append(encodings, mediasoup.RtpEncodingParameters{
+				Rid:                   "r1",
+				ScaleResolutionDownBy: 2,
+				MaxBitrate:            1000000,
+			})
+		}
+		if r.numSimulcastStreams > 2 {
+			encodings = append(encodings, mediasoup.RtpEncodingParameters{
+				Rid:                   "r2",
+				ScaleResolutionDownBy: 4,
+				MaxBitrate:            500000,
+			})
+		}
+	}
+
 	track := s.GetVideoTracks()[0]
 
 	_ = r.sendTransport.Produce(client.TransportProduceOptions{
@@ -266,6 +293,7 @@ func (r *RoomClient) EnableWebcam() {
 				},
 			},
 		},
+		Encodings: encodings,
 		CodecOptions: sdp.ProducerCodecOptions{
 			VideoGoogleStartBitrate: gptr.Of(1000),
 		},

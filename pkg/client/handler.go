@@ -164,11 +164,12 @@ type HandlerSendOptions struct {
 	track        webrtc.TrackLocal
 	codecOptions sdp.ProducerCodecOptions
 	codec        *mediasoup.RtpCodecParameters
+	encodings    []mediasoup.RtpEncodingParameters
 	onRtpSender  func(*webrtc.RTPSender)
 }
 
 func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParameters *RtpParameters, rtpSender *webrtc.RTPSender) {
-	track, codecOptions, codec, onRtpSender := options.track, options.codecOptions, options.codec, options.onRtpSender
+	track, codecOptions, codec, onRtpSender, encodings := options.track, options.codecOptions, options.codec, options.onRtpSender, options.encodings
 
 	trackKind := track.Kind().String()
 	log.Debug().Str("kind", trackKind).Str("track.id", track.ID()).Msg("send()")
@@ -183,9 +184,19 @@ func (h *PionHandler) send(options HandlerSendOptions) (localId string, rtpParam
 
 	mediaSectionIdx, mediaSectionReuseMid := h.remoteSdp.getNextMediaSectionIdx()
 
-	// TODO: 获取Media过来的encodings
+	var webrtcEncodings []webrtc.RTPEncodingParameters
+	for _, encoding := range encodings {
+		webrtcEncodings = append(webrtcEncodings, webrtc.RTPEncodingParameters{
+			RTPCodingParameters: webrtc.RTPCodingParameters{
+				RID: encoding.Rid,
+			},
+			// TODO: pion不支持scaleResolutionDownBy、maxBitrate等，它实现simulcast的方案和标准不太一样
+		})
+	}
+
 	transceiver, err := h.pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendonly,
+		Direction:     webrtc.RTPTransceiverDirectionSendonly,
+		SendEncodings: webrtcEncodings,
 	})
 	if err != nil {
 		panic(err)

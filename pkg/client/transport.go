@@ -64,17 +64,19 @@ type TransportProduceOptions struct {
 	Track        webrtc.TrackLocal
 	CodecOptions sdp.ProducerCodecOptions
 	Codec        *mediasoup.RtpCodecParameters
+	Encodings    []mediasoup.RtpEncodingParameters
 	OnRtpSender  func(*webrtc.RTPSender)
 	AppData      any
 }
 
 func (t *Transport) Produce(options TransportProduceOptions) *Producer {
-	track, codecOptions, codec, onRtpSender, appData := options.Track, options.CodecOptions, options.Codec, options.OnRtpSender, options.AppData
+	track, codecOptions, codec, onRtpSender, appData, encodings := options.Track, options.CodecOptions, options.Codec, options.OnRtpSender, options.AppData, options.Encodings
 
 	localId, rtpParameters, _ := t.handler.send(HandlerSendOptions{
 		track:        track,
 		codecOptions: codecOptions,
 		codec:        codec,
+		encodings:    encodings,
 		onRtpSender:  onRtpSender,
 	})
 
